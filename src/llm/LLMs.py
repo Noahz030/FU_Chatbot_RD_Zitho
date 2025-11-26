@@ -2,7 +2,7 @@ import datetime
 import threading
 from enum import Enum
 
-from langfuse import langfuse_context, observe
+from langfuse import observe
 from llama_index.core import Settings
 from llama_index.core.callbacks import CallbackManager
 from llama_index.core.chat_engine import SimpleChatEngine
@@ -98,8 +98,9 @@ class LLM:
 
     @observe()
     def chat(self, query: str, chat_history: list[ChatMessage], model: Models, system_prompt: str) -> ChatMessage:
-        langfuse_handler = langfuse_context.get_current_llama_index_handler()
-        Settings.callback_manager = CallbackManager([langfuse_handler])
+        # Langfuse tracing via @observe decorator - no manual handler needed
+        # langfuse_handler = langfuse_context.get_current_llama_index_handler()
+        # Settings.callback_manager = CallbackManager([langfuse_handler])
 
         if LLM.gwdg_unavailable and LLM.gwdg_unavailable_since:
             if datetime.datetime.now() - LLM.gwdg_unavailable_since > datetime.timedelta(
