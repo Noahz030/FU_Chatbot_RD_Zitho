@@ -1,0 +1,11 @@
+# OpenWebUI API Requirements
+# Zusätzliche Dependencies für OpenWebUI-Integration
+
+# Bereits im Hauptprojekt vorhanden (aus root requirements):
+# fastapi>=0.100.0
+# uvicorn[standard]>=0.23.0
+# pydantic>=2.0.0
+# langfuse
+# llama-index
+
+# Falls spezifische Versionen für OpenWebUI nötig sind, hier eintragen

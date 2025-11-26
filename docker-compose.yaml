@@ -29,3 +29,18 @@ services:
       POSTGRES_PASSWORD: 'test!123PW_'
       POSTGRES_USER: 'postgres'
       POSTGRES_DB: 'postgres'
+
+  openwebui-api:
+    build:
+      context: .
+      dockerfile: src/openwebui/Dockerfile
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    depends_on:
+      - langfuse
+    environment:
+      - LANGFUSE_HOST=http://langfuse:3000
+    restart: unless-stopped
+
