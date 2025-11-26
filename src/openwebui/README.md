@@ -2,17 +2,26 @@
 
 Dieses Verzeichnis enthält die OpenWebUI-Integration für das Chatbot Arena Benchmarking.
 
+## 🎯 Status
+
+✅ **Arena Mode funktioniert!** - Streaming-Response implementiert, body_iterator Fehler behoben  
+✅ **Zwei Modelle verfügbar** - Original vs. Verbesserte Version  
+✅ **Bereit für Massentests** - Mock-API läuft stabil auf Port 8001
+
 ## Übersicht
 
 Das Setup ermöglicht es, zwei Versionen des KI-Campus Chatbots in OpenWebUI's Arena-Modus gegeneinander zu testen:
 
-- **kicampus-original**: Die aktuelle Produktionsversion des Chatbots
-- **kicampus-improved**: Eine verbesserte Version mit Optimierungen
+- **kicampus-original**: Die aktuelle Produktionsversion des Chatbots (Chat-History: 10 Nachrichten)
+- **kicampus-improved**: Eine verbesserte Version mit erweiterten Kontext-Fenster (Chat-History: 15 Nachrichten)
 
 ## Dateien
 
-- `openwebui_api.py`: OpenWebUI-kompatible FastAPI für beide Chatbot-Versionen
+- `openwebui_api_simple.py`: **[AKTIV]** Mock-API mit Streaming für Arena Mode Tests
+- `openwebui_api_llm.py`: Vollständige API mit Azure OpenAI Integration (benötigt Azure Auth)
+- `openwebui_api.py`: Original API (deprecated, hat Langfuse-Probleme)
 - `assistant_improved.py`: Verbesserte Version des KI-Campus Assistenten
+- `arena_benchmark.py`: CLI-Tool für manuelle Benchmarks (Alternative zu Arena Mode)
 - `Dockerfile`: Docker-Image für den OpenWebUI API-Service
 - `requirements.txt`: Python-Dependencies für den Service
 
@@ -45,34 +54,44 @@ docker run -p 8001:8001 \
   kicampus-openwebui
 ```
 
-#### Option C: Lokale Entwicklung
+#### Option C: Lokale Entwicklung (Aktuell empfohlen für Tests)
 
 ```bash
-# Dependencies installieren
-pip install -r requirements.txt
+# Dependencies installieren (falls noch nicht geschehen)
+pip install fastapi uvicorn pydantic
 
-# API starten
-python -m uvicorn src.openwebui.openwebui_api:app --host 0.0.0.0 --port 8001 --reload
+# Mock-API mit Streaming-Support starten
+python -m uvicorn src.openwebui.openwebui_api_simple:app --host 0.0.0.0 --port 8001
+
+# Für echte LLM-Antworten (benötigt Azure Login):
+# python -m uvicorn src.openwebui.openwebui_api_llm:app --host 0.0.0.0 --port 8001
 ```
 
 ### 3. OpenWebUI konfigurieren
 
-1. Öffne OpenWebUI in deinem Browser
+1. OpenWebUI sollte bereits laufen auf `http://localhost:3001`
 2. Gehe zu **Settings** → **Connections** → **OpenAI API**
 3. Füge eine neue Connection hinzu:
-   - **Base URL**: `http://localhost:8001/v1`
-   - **API Key**: (optional, kann leer bleiben für lokale Tests)
-   - **Model Names**: `kicampus-original,kicampus-improved`
+   - **Base URL**: `http://host.docker.internal:8001/v1`
+   - **API Key**: (optional, kann leer bleiben)
+   - **Verify** klicken - sollte beide Modelle finden
 
-4. Aktiviere **Arena Mode** in den Chat-Einstellungen
+4. **Arena Mode aktivieren**:
+   - Öffne einen neuen Chat
+   - Klicke oben auf das Modell-Dropdown
+   - Wähle **"Arena (Side-by-side)"**
+   - Wähle beide Modelle aus: `kicampus-original` und `kicampus-improved`
 
-### 4. Arena-Benchmarking durchführen
+### 4. Arena-Benchmarking durchführen - **FUNKTIONIERT JETZT! ✅**
 
-1. Öffne einen neuen Chat in OpenWebUI
-2. Aktiviere den **Arena Mode**
-3. OpenWebUI wird automatisch beide Modelle parallel nutzen
-4. Stelle Fragen an beide Versionen gleichzeitig
+1. Öffne einen neuen Chat in OpenWebUI (`http://localhost:3001`)
+2. Klicke oben auf das Modell-Dropdown und wähle **"Arena (Side-by-side)"**
+3. Wähle beide Modelle: `kicampus-original` und `kicampus-improved`
+4. Stelle Fragen - beide Modelle antworten parallel mit Streaming
 5. Bewerte die Antworten und vergleiche die Qualität
+
+**Hinweis**: Die aktuelle Mock-API gibt Demo-Antworten mit Präfix `[Original]` bzw. `[Verbessert]` zurück.  
+Für echte LLM-Antworten muss `openwebui_api_llm.py` verwendet werden (benötigt stabile Azure Auth).
 
 ## API-Endpoints
 
