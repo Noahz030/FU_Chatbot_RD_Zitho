@@ -1,4 +1,4 @@
-from langfuse.decorators import observe
+from langfuse import observe
 from llama_index.core.llms import ChatMessage
 
 from src.llm.LLMs import Models

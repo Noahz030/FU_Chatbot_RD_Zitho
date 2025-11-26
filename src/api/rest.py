@@ -4,7 +4,7 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 from langfuse import Langfuse
-from langfuse.decorators import langfuse_context, observe
+from langfuse import langfuse_context, observe
 from llama_index.core.llms import ChatMessage, MessageRole
 from pydantic import BaseModel, Field, field_validator, model_validator
 

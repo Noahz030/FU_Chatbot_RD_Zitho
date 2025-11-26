@@ -8,7 +8,7 @@ Diese Version enthält Optimierungen gegenüber der Original-Version:
 - Bessere Spracherkennung
 """
 
-from langfuse.decorators import observe
+from langfuse import observe
 from llama_index.core.llms import ChatMessage
 
 from src.llm.assistant import KICampusAssistant

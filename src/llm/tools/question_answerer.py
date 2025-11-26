@@ -1,7 +1,7 @@
 import json
 import sys
 
-from langfuse.decorators import observe
+from langfuse import observe
 from llama_index.core.llms import ChatMessage
 from llama_index.core.schema import TextNode
 

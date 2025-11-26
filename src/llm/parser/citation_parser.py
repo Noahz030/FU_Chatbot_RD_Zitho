@@ -1,6 +1,6 @@
 import re
 
-from langfuse.decorators import observe
+from langfuse import observe
 from llama_index.core.schema import TextNode
 
 CITATION_TEXT = '<a href="{url}"><sup>[{index}]</sup></a>'

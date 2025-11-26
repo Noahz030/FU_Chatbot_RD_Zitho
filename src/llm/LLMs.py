@@ -2,7 +2,7 @@ import datetime
 import threading
 from enum import Enum
 
-from langfuse.decorators import langfuse_context, observe
+from langfuse import langfuse_context, observe
 from llama_index.core import Settings
 from llama_index.core.callbacks import CallbackManager
 from llama_index.core.chat_engine import SimpleChatEngine

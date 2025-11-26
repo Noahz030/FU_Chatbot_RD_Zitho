@@ -1,4 +1,4 @@
-from langfuse.decorators import observe
+from langfuse import observe
 from lingua import Language, LanguageDetectorBuilder
 
 

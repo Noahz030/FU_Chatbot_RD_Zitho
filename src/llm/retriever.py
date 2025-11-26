@@ -1,4 +1,4 @@
-from langfuse.decorators import observe
+from langfuse import observe
 from llama_index.core.schema import NodeWithScore, TextNode
 from llama_index.core.vector_stores import VectorStoreQuery
 
