@@ -44,3 +44,11 @@ services:
       - LANGFUSE_HOST=http://langfuse:3000
     restart: unless-stopped
 
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:main
+    ports:
+      - "3001:8080"
+    environment:
+      - WEBUI_SECRET_KEY=your-secret-key-here
+      - CORS_ALLOW_ORIGIN=*
+    restart: unless-stopped
