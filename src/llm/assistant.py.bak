@@ -1,3 +1,4 @@
+from langfuse import observe
 from llama_index.core.llms import ChatMessage
 
 from src.llm.LLMs import Models
@@ -17,11 +18,13 @@ class KICampusAssistant:
         self.output_formatter = CitationParser()
         self.language_detector = LanguageDetector()
 
+    @observe()
     def limit_chat_history(self, chat_history: list[ChatMessage], limit: int) -> list[ChatMessage]:
         if len(chat_history) > limit:
             chat_history = chat_history[-limit:]
         return chat_history
 
+    @observe()
     def chat(self, query: str, model: Models, chat_history: list[ChatMessage] = []) -> ChatMessage:
         """Chat with general bot about drupal and functions of ki-campus. For frontend integrated drupal."""
 
@@ -47,6 +50,7 @@ class KICampusAssistant:
         response.content = self.output_formatter.parse(answer=response.content, source_documents=retrieved_chunks)
         return response
 
+    @observe()
     def chat_with_course(
         self,
         query: str,

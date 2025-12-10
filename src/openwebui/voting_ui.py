@@ -286,6 +286,12 @@ def get_voting_dashboard():
             </div>
         </div>
         
+        <!-- Debug Panel -->
+        <div style="background: #fff3cd; border: 2px solid #ffc107; padding: 15px; margin: 20px; border-radius: 8px; font-family: monospace; font-size: 12px;">
+            <strong>🔍 Debug Log:</strong>
+            <div id="debugLog" style="max-height: 150px; overflow-y: auto; margin-top: 10px; white-space: pre-wrap;"></div>
+        </div>
+
         <div class="comparisons-section">
             <h2>Vergleiche zum Bewerten</h2>
             <div id="comparisonsContainer">
@@ -297,20 +303,41 @@ def get_voting_dashboard():
     <script>
         const API_BASE = 'http://localhost:8001';
         
+        function debugLog(msg) {
+            const logEl = document.getElementById('debugLog');
+            const time = new Date().toLocaleTimeString();
+            logEl.innerHTML += `\n[${time}] ${msg}`;
+            logEl.scrollTop = logEl.scrollHeight;
+            console.log(msg);
+        }
+        
         async function loadComparisons() {
+            debugLog('🔄 Loading comparisons from: ' + API_BASE);
             try {
+                debugLog('📡 Fetching /arena/comparisons...');
                 const response = await fetch(`${API_BASE}/arena/comparisons`);
+                debugLog('✅ Response status: ' + response.status);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
                 const data = await response.json();
+                debugLog('📦 Received data with ' + data.comparisons?.length + ' comparisons');
+                
                 renderComparisons(data.comparisons);
                 updateStats();
+                debugLog('✅ Rendering complete');
             } catch (error) {
-                console.error('Error loading comparisons:', error);
+                debugLog('❌ ERROR: ' + error.message);
+                debugLog('Stack: ' + error.stack);
                 document.getElementById('comparisonsContainer').innerHTML = 
-                    '<div class="no-data">❌ Fehler beim Laden der Vergleiche</div>';
+                    `<div class="no-data">❌ Fehler: ${error.message}<br>Siehe Debug Log oben</div>`;
             }
         }
         
         function renderComparisons(comparisons) {
+            debugLog('🎨 Rendering ' + comparisons.length + ' comparisons');
             const container = document.getElementById('comparisonsContainer');
             
             if (comparisons.length === 0) {
@@ -323,7 +350,7 @@ def get_voting_dashboard():
                 const voteBadgeClass = comp.vote ? comp.vote.toLowerCase() : 'unvoted';
                 
                 return `
-                    <div class="comparison-card">
+                    <div class="comparison-card" data-comparison-id="${comp.id}">
                         <div class="comparison-header">
                             <h3>❓ ${comp.question}</h3>
                             <div class="vote-badge ${voteBadgeClass}">${voted}</div>
@@ -341,14 +368,14 @@ def get_voting_dashboard():
                         </div>
                         
                         ${!comp.vote ? `
-                            <div class="vote-buttons" data-comparison-id="${comp.id}">
+                            <div class="vote-buttons">
                                 <button class="vote-btn" data-vote="A">👈 Model A</button>
                                 <button class="vote-btn" data-vote="tie">🤝 Unentschieden</button>
                                 <button class="vote-btn" data-vote="B">👉 Model B</button>
                             </div>
-                            <input type="text" class="comment-input" placeholder="Optional: Kommentar..." data-comparison-id="${comp.id}">
-                            <button class="submit-btn" onclick="submitVote('${comp.id}')">Vote abgeben</button>
-                            <div class="success-msg" data-comparison-id="${comp.id}"></div>
+                            <input type="text" class="comment-input" placeholder="Optional: Kommentar...">
+                            <button class="submit-btn">Vote abgeben</button>
+                            <div class="success-msg"></div>
                         ` : `
                             <p><strong>Dein Vote:</strong> ${comp.vote === 'A' ? 'Model A' : comp.vote === 'B' ? 'Model B' : 'Unentschieden'}</p>
                             ${comp.comment ? `<p><strong>Kommentar:</strong> ${comp.comment}</p>` : ''}
@@ -357,24 +384,24 @@ def get_voting_dashboard():
                 `;
             }).join('');
             
-            // Attach event listeners
-            document.querySelectorAll('.vote-btn').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    const parent = this.parentElement;
-                    parent.querySelectorAll('.vote-btn').forEach(b => b.classList.remove('active'));
-                    this.classList.add('active');
-                    this.parentElement.dataset.selectedVote = this.dataset.vote;
-                });
-            });
-        }
-        
-        async function submitVote(comparisonId) {
-            const buttons = document.querySelector(`[data-comparison-id="${comparisonId}"]`);
-            const vote = buttons.dataset.selectedVote;
-            const comment = document.querySelector(`[data-comparison-id="${comparisonId}"].comment-input`)?.value;
+            // Attach event listeners to each card
+            document.querySelectorAll('.comparison-card').forEach(card => {
+                const compId = card.dataset.comparisonId;
+                
+                // Vote button selection
+                card.querySelectorAll('.vote-btn').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        card.querySelectorAll('.vote-btn').forEach(b => b.classList.remove('active'));
+                        this.classList.add('active');
+                        card.dataset.selectedVote = this.dataset.vote;
+                    });
+        async function submitVote(comparisonId, card) {
+            const vote = card.dataset.selectedVote;
+            const commentInput = card.querySelector('.comment-input');
+            const comment = commentInput?.value || '';
             
             if (!vote) {
-                alert('Bitte wähle eine Option');
+                alert('Bitte wähle eine Option (A, Tie oder B)');
                 return;
             }
             
@@ -386,9 +413,13 @@ def get_voting_dashboard():
                 });
                 
                 if (response.ok) {
-                    const msgEl = document.querySelector(`[data-comparison-id="${comparisonId}"].success-msg`);
-                    msgEl.textContent = '✅ Vote gespeichert!';
-                    msgEl.classList.add('show');
+                    const msgEl = card.querySelector('.success-msg');
+                    if (msgEl) {
+                        msgEl.textContent = '✅ Vote gespeichert!';
+                        msgEl.style.display = 'block';
+                    }
+                    
+                    // Reload after 1 second
                     setTimeout(() => loadComparisons(), 1000);
                 } else {
                     alert('❌ Fehler beim Vote');
@@ -397,10 +428,21 @@ def get_voting_dashboard():
                 console.error('Vote error:', error);
                 alert('❌ Fehler beim Vote: ' + error.message);
             }
+        }           }, 1000);
+                } else {
+                    const errorText = await response.text();
+                    console.error('Vote failed:', errorText);
+                    alert('❌ Fehler beim Vote: ' + errorText);
+                }
+            } catch (error) {
+                console.error('Vote error:', error);
+                alert('❌ Fehler beim Vote: ' + error.message);
+            }
         }
-        
         async function updateStats() {
+            debugLog('📊 Updating stats...');
             try {
+                const response = await fetch(`${API_BASE}/arena/statistics`);
                 const response = await fetch(`${API_BASE}/arena/statistics`);
                 const stats = await response.json();
                 

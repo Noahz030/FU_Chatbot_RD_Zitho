@@ -8,7 +8,6 @@ Diese Version enthält Optimierungen gegenüber der Original-Version:
 - Bessere Spracherkennung
 """
 
-from langfuse import observe
 from llama_index.core.llms import ChatMessage
 
 from src.llm.assistant import KICampusAssistant
@@ -43,7 +42,6 @@ class KICampusAssistantImproved(KICampusAssistant):
         # self.question_answerer = ImprovedQuestionAnswerer()
         # self.retriever = ImprovedRetriever()
 
-    @observe()
     def limit_chat_history(self, chat_history: list[ChatMessage], limit: int = 15) -> list[ChatMessage]:
         """
         Erweiterte Chat-History mit mehr Kontext (15 statt 10 Nachrichten).
@@ -52,7 +50,6 @@ class KICampusAssistantImproved(KICampusAssistant):
             chat_history = chat_history[-limit:]
         return chat_history
 
-    @observe()
     def chat(self, query: str, model: Models, chat_history: list[ChatMessage] = []) -> ChatMessage:
         """
         Verbesserter Chat mit erweitertem Kontext-Fenster.
@@ -79,7 +76,6 @@ class KICampusAssistantImproved(KICampusAssistant):
         response.content = self.output_formatter.parse(answer=response.content, source_documents=retrieved_chunks)
         return response
 
-    @observe()
     def chat_with_course(
         self,
         query: str,
