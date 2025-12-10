@@ -1,19 +1,46 @@
 # OpenWebUI Arena Integration für KI-Campus Chatbot
 
-Dieses Verzeichnis enthält die OpenWebUI-Integration für das Chatbot Arena Benchmarking.
+Dieses Verzeichnis enthält die OpenWebUI-Integration für das Chatbot Arena Benchmarking **mit Voting System & Statistik-Logging**.
 
 ## 🎯 Status
 
-✅ **Arena Mode funktioniert!** - Streaming-Response implementiert, body_iterator Fehler behoben  
-✅ **Zwei Modelle verfügbar** - Original vs. Verbesserte Version  
-✅ **Bereit für Massentests** - Mock-API läuft stabil auf Port 8001
+✅ **Arena Mode funktioniert!** - Side-by-Side Vergleiche laufen  
+✅ **Voting System Live!** - Web Dashboard + CLI Tool zum Abstimmen  
+✅ **Vollständiges Logging** - Alle Vergleiche und Votes persistent gespeichert  
+✅ **Bereit für Massentests** - Starte mit `./start_arena.sh`
 
-## Übersicht
+## 🌟 Highlights
 
-Das Setup ermöglicht es, zwei Versionen des KI-Campus Chatbots in OpenWebUI's Arena-Modus gegeneinander zu testen:
+- **OpenWebUI Arena Mode** - Zwei Modelle parallel im Chat vergleichen
+- **Voting Dashboard** (Port 8002) - Schönes Web-Interface zum Voten
+- **Automatisches Logging** - Alle Votes in JSONL Format gespeichert
+- **Live Statistiken** - Win Rates, Unentschieden, Trends
+- **CLI Tools** - Voting via Terminal, Batch Processing, Exports
+- **Azure OpenAI Integration** - Echte GPT-4 Antworten mit Citations
 
-- **kicampus-original**: Die aktuelle Produktionsversion des Chatbots (Chat-History: 10 Nachrichten)
-- **kicampus-improved**: Eine verbesserte Version mit erweiterten Kontext-Fenster (Chat-History: 15 Nachrichten)
+## 📊 Architektur
+
+```
+OpenWebUI (3001)      Voting UI (8002)
+    ↓                      ↓
+    └────────┬─────────────┘
+             ↓
+         LLM-API (8001)
+        /      |      \
+    Chat   Voting   Storage
+  (Azure)  (API)    (JSONL)
+```
+
+## 🚀 Quick Start
+
+```bash
+# Alle Services starten (einmalig nach Neustart)
+./start_arena.sh
+```
+
+Dann öffne:
+- **Chat**: http://localhost:3001
+- **Voting**: http://localhost:8002
 
 ## Dateien
 

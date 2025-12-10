@@ -1,11 +1,14 @@
 """
 OpenWebUI-kompatible API mit echter Azure OpenAI Integration und Streaming-Support.
+Inkludiert Arena Voting System für Benchmarking.
 """
 
 import asyncio
 import json
 import time
-from typing import AsyncGenerator, Literal
+import uuid
+from datetime import datetime
+from typing import AsyncGenerator, Literal, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,6 +20,7 @@ from src.env import env
 from src.llm.assistant import KICampusAssistant
 from src.llm.LLMs import Models
 from src.openwebui.assistant_improved import KICampusAssistantImproved
+from src.openwebui.voting_system import default_storage, ArenaComparison
 
 app = FastAPI(
     title="KI-Campus Chatbot Arena API",
@@ -294,6 +298,106 @@ def health():
         "mode": "production",
         "azure_configured": bool(env.AZURE_OPENAI_API_KEY)
     }
+
+
+# ============================================================================
+# Arena Voting Endpoints
+# ============================================================================
+
+class SaveComparisonRequest(BaseModel):
+    """Request body für das Speichern eines Arena-Vergleichs."""
+    question: str
+    model_a: str
+    answer_a: str
+    model_b: str
+    answer_b: str
+
+
+class VoteRequest(BaseModel):
+    """Request body für das Voten."""
+    comparison_id: str
+    vote: Literal["A", "B", "tie"]
+    comment: Optional[str] = None
+
+
+@app.post("/arena/save-comparison")
+def save_comparison(request: SaveComparisonRequest):
+    """
+    Speichert einen neuen Arena-Vergleich.
+    
+    Returns die comparison_id für späteres Voting.
+    """
+    comparison = ArenaComparison(
+        id=str(uuid.uuid4()),
+        question=request.question,
+        timestamp=datetime.utcnow().isoformat(),
+        model_a=request.model_a,
+        answer_a=request.answer_a,
+        model_b=request.model_b,
+        answer_b=request.answer_b,
+    )
+    
+    default_storage.save_comparison(comparison)
+    
+    return {
+        "success": True,
+        "comparison_id": comparison.id,
+        "message": "Comparison saved successfully"
+    }
+
+
+@app.post("/arena/vote")
+def submit_vote(request: VoteRequest):
+    """
+    Submitted einen Vote für einen existierenden Vergleich.
+    """
+    success = default_storage.update_vote(
+        comparison_id=request.comparison_id,
+        vote=request.vote,
+        comment=request.comment
+    )
+    
+    if not success:
+        raise HTTPException(status_code=404, detail="Comparison ID not found")
+    
+    return {
+        "success": True,
+        "message": f"Vote '{request.vote}' recorded successfully"
+    }
+
+
+@app.get("/arena/comparisons")
+def get_all_comparisons():
+    """
+    Gibt alle gespeicherten Vergleiche zurück.
+    """
+    comparisons = default_storage.load_all_comparisons()
+    return {
+        "total": len(comparisons),
+        "comparisons": [c.model_dump() for c in comparisons]
+    }
+
+
+@app.get("/arena/statistics")
+def get_statistics():
+    """
+    Gibt Statistiken über alle Votes zurück.
+    """
+    stats = default_storage.get_statistics()
+    return stats
+
+
+@app.get("/arena/comparison/{comparison_id}")
+def get_comparison(comparison_id: str):
+    """
+    Gibt einen spezifischen Vergleich zurück.
+    """
+    comparison = default_storage.get_comparison_by_id(comparison_id)
+    
+    if not comparison:
+        raise HTTPException(status_code=404, detail="Comparison not found")
+    
+    return comparison.model_dump()
 
 
 if __name__ == "__main__":
