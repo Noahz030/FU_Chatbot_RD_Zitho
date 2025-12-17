@@ -16,8 +16,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-API_BASE = "http://localhost:8001"
-
 @app.get("/", response_class=HTMLResponse)
 def index():
     """Einfaches Voting UI"""
@@ -29,36 +27,14 @@ def index():
     <title>Arena Voting</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
             max-width: 1000px;
             margin: 0 auto;
-            padding: 20px;
-            background: #f0f0f0;
+            padding: 24px;
+            background: #f4f4f4;
+            color: #1f1f1f;
         }
-        h1 { color: #333; }
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 10px;
-            margin: 20px 0;
-        }
-        .stat {
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
-            text-align: center;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .stat-value {
-            font-size: 24px;
-            font-weight: bold;
-            color: #667eea;
-        }
-        .stat-label {
-            color: #666;
-            font-size: 12px;
-            margin-top: 5px;
-        }
+        h1 { margin: 0 0 12px; font-weight: 600; }
         .comparison {
             background: white;
             padding: 20px;
@@ -74,14 +50,12 @@ def index():
         }
         .answer {
             padding: 12px;
-            background: #f9f9f9;
-            border-left: 4px solid #ddd;
+            background: #fafafa;
+            border: 1px solid #e2e2e2;
             border-radius: 4px;
             font-size: 13px;
             line-height: 1.5;
         }
-        .answer.a { border-left-color: #1976d2; }
-        .answer.b { border-left-color: #7b1fa2; }
         .buttons {
             display: flex;
             gap: 10px;
@@ -90,25 +64,25 @@ def index():
         button {
             flex: 1;
             padding: 10px;
-            border: 2px solid #ddd;
-            background: white;
+            border: 1px solid #d0d0d0;
+            background: #fbfbfb;
             cursor: pointer;
             border-radius: 4px;
-            font-weight: bold;
+            font-weight: 600;
         }
-        button:hover { background: #f0f0f0; }
+        button:hover { background: #ededed; }
         button.active {
-            background: #667eea;
+            background: #333;
             color: white;
-            border-color: #667eea;
+            border-color: #333;
         }
         .submit {
             width: 100%;
-            background: #28a745;
+            background: #333;
             color: white;
             border: none;
         }
-        .submit:hover { background: #218838; }
+        .submit:hover { background: #1f1f1f; }
         .voted { opacity: 0.6; }
         .voted p { color: #666; font-size: 12px; }
         .error {
@@ -126,80 +100,108 @@ def index():
     </style>
 </head>
 <body>
-    <h1>🏆 KI-Campus Arena Voting</h1>
-    
-    <div class="stats" id="stats">
-        <div class="stat"><div class="stat-value">-</div><div class="stat-label">Total</div></div>
-        <div class="stat"><div class="stat-value">-</div><div class="stat-label">Gevotet</div></div>
-        <div class="stat"><div class="stat-value">-</div><div class="stat-label">Model B %</div></div>
-        <div class="stat"><div class="stat-value">-</div><div class="stat-label">Ties %</div></div>
-    </div>
+    <h1>Arena Vergleich</h1>
     
     <div id="container">
         <div class="loading">⏳ Lade Vergleiche...</div>
     </div>
 
     <script>
-        const API = 'http://localhost:8001';
+        // API Endpoint (explicit IPv4 to avoid localhost resolution quirks)
+        const API = 'http://127.0.0.1:8001';
         let comparisons = [];
         let currentIndex = 0;
         let selectedVote = null;
 
+        // Debug: Show we started
+        document.getElementById('container').innerHTML = '<div class="loading">⏳ JavaScript läuft, starte Fetch...</div>';
+
         async function load() {
+            const container = document.getElementById('container');
+            container.innerHTML = '<div class="loading">⏳ Fetching von ' + API + '...</div>';
+            
             try {
-                const resp = await fetch(API + '/arena/comparisons');
-                const data = await resp.json();
-                comparisons = data.comparisons;
-                
-                // Stats aktualisieren
-                const stats = await fetch(API + '/arena/statistics').then(r => r.json());
-                document.querySelectorAll('.stat-value').forEach((el, i) => {
-                    if (i === 0) el.textContent = stats.total_comparisons;
-                    if (i === 1) el.textContent = stats.voted;
-                    if (i === 2) el.textContent = (stats.win_rate_b * 100).toFixed(0) + '%';
-                    if (i === 3) el.textContent = (stats.tie_rate * 100).toFixed(0) + '%';
+                const resp = await fetch(API + '/arena/comparisons', {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
                 });
+                
+                container.innerHTML = '<div class="loading">⏳ Response erhalten, Status: ' + resp.status + '</div>';
+                
+                if (!resp.ok) {
+                    throw new Error('HTTP ' + resp.status + ' ' + resp.statusText);
+                }
+                
+                const data = await resp.json();
+                comparisons = data.comparisons || [];
+                
+                container.innerHTML = '<div class="loading">⏳ ' + comparisons.length + ' Vergleiche geladen, rendere...</div>';
+                
+                if (comparisons.length === 0) {
+                    container.innerHTML = '<div class="error">⚠️ Keine Vergleiche in der Datenbank</div>';
+                    return;
+                }
                 
                 render();
             } catch (e) {
-                document.getElementById('container').innerHTML = 
-                    '<div class="error">❌ Fehler: ' + e.message + '</div>';
+                container.innerHTML = 
+                    '<div class="error">❌ Fehler beim Laden<br>' + 
+                    'API: ' + API + '/arena/comparisons<br>' +
+                    'Error: ' + e.message + '<br>' +
+                    'Stack: ' + (e.stack || 'no stack') + '</div>';
             }
         }
 
         function render() {
             const container = document.getElementById('container');
+
+            if (!comparisons || comparisons.length === 0) {
+                container.innerHTML = '<div class="error">⚠️ Keine Vergleiche geladen</div>';
+                return;
+            }
+
             const unvoted = comparisons.filter(c => !c.vote);
-            
+
             if (unvoted.length === 0) {
                 container.innerHTML = '<div class="loading">✅ Alle Vergleiche abgestimmt!</div>';
                 return;
             }
-            
+
             const comp = unvoted[0];
             selectedVote = null;
-            
+
             container.innerHTML = `
                 <div class="comparison">
-                    <h2>❓ ${comp.question}</h2>
+                    <h2 id="question"></h2>
                     <div class="answers">
                         <div class="answer a">
-                            <strong>Model A (Original)</strong><br>
-                            ${comp.answer_a.substring(0, 250)}...
+                            <strong>Antwort A</strong><br>
+                            <div id="ansA"></div>
                         </div>
                         <div class="answer b">
-                            <strong>Model B (Verbessert)</strong><br>
-                            ${comp.answer_b.substring(0, 250)}...
+                            <strong>Antwort B</strong><br>
+                            <div id="ansB"></div>
                         </div>
                     </div>
                     <div class="buttons">
-                        <button onclick="selectVote('A')" id="btn-A">👈 Model A</button>
-                        <button onclick="selectVote('tie')" id="btn-tie">🤝 Tie</button>
-                        <button onclick="selectVote('B')" id="btn-B">👉 Model B</button>
+                        <button onclick="selectVote('A')" id="btn-A">Wähle A</button>
+                        <button onclick="selectVote('tie')" id="btn-tie">Gleichwertig</button>
+                        <button onclick="selectVote('B')" id="btn-B">Wähle B</button>
                     </div>
-                    <button class="submit" onclick="submitVote('${comp.id}')">✅ Vote abgeben</button>
+                    <button class="submit" onclick="submitVote('${comp.id}')">Vote abgeben</button>
                 </div>
             `;
+
+            // Safely inject text to avoid breaking markup
+            const qEl = document.getElementById('question');
+            const aEl = document.getElementById('ansA');
+            const bEl = document.getElementById('ansB');
+
+            if (qEl) qEl.textContent = comp.question || '';
+            if (aEl) aEl.textContent = comp.answer_a || '';
+            if (bEl) bEl.textContent = comp.answer_b || '';
         }
 
         function selectVote(vote) {
@@ -228,8 +230,9 @@ def index():
                 });
                 
                 if (resp.ok) {
+                    selectedVote = null;
+                    await load();
                     alert('✅ Vote gespeichert!');
-                    load();
                 } else {
                     alert('❌ Fehler: ' + resp.statusText);
                 }
@@ -238,10 +241,172 @@ def index():
             }
         }
 
-        // Start
+        // Start immediately
         load();
-        setInterval(load, 5000);
+        
+        // Timeout fallback
+        setTimeout(function() {
+            if (comparisons.length === 0) {
+                document.getElementById('container').innerHTML = 
+                    '<div class="error">⚠️ Timeout beim Laden<br>' +
+                    'API: <a href="http://127.0.0.1:8001/arena/comparisons" target="_blank">http://127.0.0.1:8001/arena/comparisons</a><br>' +
+                    'Prüfe Browser Console für Details</div>';
+            }
+        }, 5000);
     </script>
+</body>
+</html>
+"""
+
+
+@app.get("/results", response_class=HTMLResponse)
+def results():
+    """Neutrale, read-only Ergebnisliste als Tabelle"""
+    return """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset=\"UTF-8\">
+    <title>Arena Ergebnisse</title>
+    <style>
+        body { font-family: system-ui, -apple-system, \"Segoe UI\", sans-serif; margin: 0 auto; max-width: 1200px; padding: 24px; background: #f6f6f6; color: #1f1f1f; }
+        h1 { margin: 0 0 12px; font-weight: 600; }
+        .controls { display: flex; gap: 10px; align-items: center; margin: 12px 0 16px; }
+        select, button, input { padding: 8px 10px; border: 1px solid #d0d0d0; border-radius: 4px; background: #fff; }
+        table { width: 100%; border-collapse: collapse; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        th, td { padding: 10px 12px; border-bottom: 1px solid #eee; text-align: left; vertical-align: top; }
+        th { background: #fafafa; font-weight: 600; position: sticky; top: 0; }
+        tbody tr:hover { background: #fafafa; }
+        .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; border: 1px solid #ddd; font-size: 12px; }
+        .vote-A { background:#eef6ff; border-color:#cfe3ff; }
+        .vote-B { background:#f4e8ff; border-color:#e3d3ff; }
+        .vote-tie { background:#eef7ee; border-color:#d7ead7; }
+        .muted { color:#666; font-size:12px; }
+        .nowrap { white-space: nowrap; }
+        .q { max-width: 420px; }
+        .ans { max-width: 460px; }
+    </style>
+    <script>
+        const API = 'http://127.0.0.1:8001';
+        let all = [];
+        let filtered = [];
+
+        async function load() {
+            const container = document.getElementById('status');
+            container.textContent = 'Lade von ' + API + '/arena/comparisons ...' ;
+            try {
+                console.log('Fetching from:', API + '/arena/comparisons');
+                const resp = await fetch(API + '/arena/comparisons', {
+                    method: 'GET',
+                    headers: {'Accept': 'application/json'},
+                    mode: 'cors'
+                });
+                console.log('Response status:', resp.status);
+                
+                if (!resp.ok) {
+                    throw new Error('HTTP ' + resp.status + ': ' + resp.statusText);
+                }
+                
+                const data = await resp.json();
+                console.log('Data received:', data);
+                
+                all = data.comparisons || [];
+                console.log('Loaded comparisons:', all.length);
+                
+                applyFilters();
+                container.textContent = all.length + ' Vergleiche geladen';
+            } catch (e) {
+                console.error('Load error:', e);
+                container.textContent = '❌ Fehler: ' + e.message + ' | API: ' + API;
+            }
+        }
+
+        function applyFilters() {
+            const sel = document.getElementById('filter');
+            const q = (document.getElementById('search').value || '').toLowerCase();
+            filtered = all.filter(c => {
+                const voted = !!c.vote;
+                const voteOk = sel.value === 'all' || (sel.value === 'voted' && voted) || (sel.value === 'unvoted' && !voted);
+                const text = ((c.question||'') + ' ' + (c.answer_a||'') + ' ' + (c.answer_b||'')).toLowerCase();
+                const searchOk = !q || text.includes(q);
+                return voteOk && searchOk;
+            });
+            renderTable();
+        }
+
+        function pill(vote) {
+            if (!vote) return '<span class="pill">-</span>';
+            const cls = vote === 'A' ? 'vote-A' : vote === 'B' ? 'vote-B' : 'vote-tie';
+            return `<span class="pill ${cls}">${vote}</span>`;
+        }
+
+        function truncate(t, n=140) { if (!t) return ''; return t.length>n ? t.slice(0,n)+'…' : t; }
+
+        function renderTable() {
+            const tbody = document.querySelector('tbody');
+            tbody.innerHTML = filtered.map(c => `
+                <tr>
+                    <td class="nowrap muted">${(c.timestamp||'').replace('T',' ')}</td>
+                    <td class="q">${truncate(c.question, 160)}</td>
+                    <td class="ans">${truncate(c.answer_a, 160)}</td>
+                    <td class="ans">${truncate(c.answer_b, 160)}</td>
+                    <td>${pill(c.vote)}</td>
+                    <td class="nowrap muted">${c.vote_timestamp ? c.vote_timestamp.replace('T',' ') : ''}</td>
+                </tr>
+            `).join('');
+            const status = document.getElementById('status');
+            if (status) status.textContent = filtered.length + ' von ' + all.length + ' Einträgen angezeigt';
+        }
+
+
+        function exportCSV() {
+            const header = ['id','timestamp','question','model_a','answer_a','model_b','answer_b','vote','vote_timestamp'];
+            const rows = filtered.map(c => header.map(h => {
+                let val = (c[h] || '').toString();
+                val = val.split('\\n').join(' ');
+                val = val.split('"').join('""');
+                return val;
+            }));
+            const csv = [header.join(','), ...rows.map(r => '"' + r.join('","') + '"')].join('\\n');
+            const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'arena_results.csv';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        window.addEventListener('DOMContentLoaded', load);
+    </script>
+</head>
+<body>
+    <h1>Arena Ergebnisse</h1>
+    <div class="controls">
+        <span id="status" class="muted">-</span>
+        <select id="filter" onchange="applyFilters()">
+            <option value="all">Alle</option>
+            <option value="voted">Nur gevotet</option>
+            <option value="unvoted">Nur offen</option>
+        </select>
+        <input id="search" type="search" placeholder="Suche in Frage/Antworten" oninput="applyFilters()"/>
+        <button onclick="exportCSV()">CSV Export</button>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Erstellt</th>
+                <th>Frage</th>
+                <th>Antwort A</th>
+                <th>Antwort B</th>
+                <th>Vote</th>
+                <th>Vote-Zeit</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td colspan="6" class="muted">Lade…</td></tr>
+        </tbody>
+    </table>
 </body>
 </html>
 """
