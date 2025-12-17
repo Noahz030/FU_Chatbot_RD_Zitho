@@ -36,6 +36,75 @@ Before pushing the docker image you need to be authenticated docker via `gcloud 
 
 If you're working with a mac that is using an arm64 architecture, you specifically need to build a docker image based on an [amd architecture for cloud run](https://stackoverflow.com/questions/66920645/exec-format-error-when-running-containers-build-with-apple-m1-chip-arm-based).
 
+# Arena Voting (UI + Results)
+
+Lightweight, local-only Arena mode to compare answers and record votes.
+
+- Code:
+    - UI and Results: `src/openwebui/voting_ui_simple.py`
+    - Lightweight Arena API: `src/openwebui/arena_api.py`
+    - Storage (append-only JSONL): `src/openwebui/data/arena_votes.jsonl` (not committed)
+
+## Run locally (two processes)
+
+Start the API (arena endpoints only):
+
+```zsh
+/Users/browse/FU_Chatbot_RD_Zitho/.venv/bin/python -m uvicorn src.openwebui.arena_api:app --host 127.0.0.1 --port 8001
+```
+
+Start the UI (voting + results dashboard):
+
+```zsh
+/Users/browse/FU_Chatbot_RD_Zitho/.venv/bin/python -m uvicorn src.openwebui.voting_ui_simple:app --host 127.0.0.1 --port 8002
+```
+
+Open in browser:
+
+- Voting UI: http://127.0.0.1:8002/
+- Results dashboard: http://127.0.0.1:8002/results (filters, search, CSV export)
+
+## API surface (used by UI)
+
+- `GET  /arena/comparisons` – list comparisons
+- `GET  /arena/statistics` – aggregate stats (backend-only)
+- `GET  /arena/comparison/{id}` – one comparison
+- `POST /arena/save-comparison` – create new comparison
+- `POST /arena/vote` – record a vote `{comparison_id, vote: "A"|"B"|"tie", comment?}`
+
+## Notes & Troubleshooting
+
+- Use `127.0.0.1` explicitly (not `localhost`) to avoid Safari localhost quirks.
+- The results page shows live status messages and logs to the browser console on errors.
+- CSV export escapes quotes and replaces newlines for Excel/Sheets compatibility.
+- Data is stored in `src/openwebui/data/arena_votes.jsonl`; keep it out of commits.
+- If results show "Lade…" endlessly: verify API is up and `GET /arena/comparisons` returns data.
+- If Safari reports JS syntax errors, ensure you’re on branch `feature/openwebui-arena` (contains fixes for newline/quote escaping and missing elements).
+
+## Seeding comparisons
+
+You can seed via the API (`POST /arena/save-comparison`) or the helper script `scripts/arena_seed.py` which appends unvoted items directly to the JSONL. Unvoted rows appear in the voting UI automatically.
+
+Examples:
+
+```zsh
+# From a newline-separated questions file
+python scripts/arena_seed.py --questions path/to/questions.txt
+
+# From a JSON array (objects require: question, answer_a, answer_b; optional: model_a, model_b)
+python scripts/arena_seed.py --json path/to/items.json
+
+# Custom storage file and placeholders
+python scripts/arena_seed.py \
+    --questions questions.txt \
+    --model-a "kicampus-original" --model-b "kicampus-improved" \
+    --answer-a "Antwort A für: {q}" --answer-b "Antwort B für: {q}" \
+    --storage-file src/openwebui/data/arena_votes.jsonl
+
+# Dry-run to preview
+python scripts/arena_seed.py --questions questions.txt --dry-run
+```
+
 # Data Extraction
 
 # Moodle
