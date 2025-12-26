@@ -13,7 +13,7 @@ from typing import AsyncGenerator, Literal
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from langfuse import observe
+from langfuse.decorators import observe
 from llama_index.core.llms import ChatMessage, MessageRole
 from pydantic import BaseModel, Field
 

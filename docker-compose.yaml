@@ -51,4 +51,8 @@ services:
     environment:
       - WEBUI_SECRET_KEY=your-secret-key-here
       - CORS_ALLOW_ORIGIN=*
+      - OPENAI_API_BASE_URL=http://openwebui-api:8001/v1
+      - OPENAI_API_KEY=local-dev-key
+      - DEFAULT_ADMIN_EMAIL=admin@localhost
+      - DEFAULT_ADMIN_PASSWORD=TempAdmin123!
     restart: unless-stopped

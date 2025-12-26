@@ -7,9 +7,15 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install poetry
+RUN pip install --no-cache-dir poetry==1.8.0
+
+# Copy pyproject.toml and poetry.lock (if exists)
+COPY pyproject.toml poetry.lock* ./
+
+# Install dependencies using poetry (including api and dev groups)
+RUN poetry config virtualenvs.create false \
+    && poetry install --no-interaction --no-ansi --with api
 
 # Copy source code
 COPY . .
@@ -18,4 +24,4 @@ COPY . .
 EXPOSE 8001
 
 # Run the OpenWebUI API
-CMD ["uvicorn", "src.openwebui.openwebui_api:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["uvicorn", "src.openwebui.openwebui_api_llm:app", "--host", "0.0.0.0", "--port", "8001"]

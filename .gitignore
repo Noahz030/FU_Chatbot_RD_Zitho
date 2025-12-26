@@ -19,3 +19,7 @@ db
 
 ## Failed Transcripts
 FailedTranscripts.xlsx
+
+## Arena runtime data (do not commit)
+src/openwebui/data/*.jsonl
+src/openwebui/arena_comparisons.json

@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-from typing import Any
+from typing import Any, Union
 
 from azure.core.exceptions import ResourceNotFoundError
 from azure.identity import DefaultAzureCredential
@@ -61,12 +61,12 @@ class EnvHelper(BaseModel):
 
     @field_validator("ENVIRONMENT")
     def validate_ENVIRONMENT(cls, value: str) -> str:
-        if value not in ["STAGING", "PRODUCTION"]:
+        if value not in ["LOCAL", "STAGING", "PRODUCTION"]:
             raise ValueError("ENVIRONMENT must be LOCAL, STAGING, or PRODUCTION")
         return value
 
     @field_validator("REST_API_KEYS", mode="before")
-    def transform_REST_API_KEYS(cls, value: list[str] | str) -> list[str]:
+    def transform_REST_API_KEYS(cls, value: Union[list[str], str]) -> list[str]:
         if type(value) == str:
             # json elements must be double quoted, but are single quoted through terraform
             value = json.loads(value.replace("'", '"'))
@@ -75,7 +75,7 @@ class EnvHelper(BaseModel):
         return value
 
     @staticmethod
-    def append_variable(kwargs: Any, variable_key: str, secret_client: SecretClient, class_variable: str = "") -> Any:
+    def append_variable(kwargs: Any, variable_key: str, secret_client: SecretClient | None, class_variable: str = "") -> Any:
         """Appends a variable to the kwargs dictionary. If the variable is not set in the environment, it will be fetched from the key vault.
         Use class_variable to set a different class variable in the kwargs dictionary, than the variable_key name."""
         kwargs_key = class_variable if class_variable else variable_key
@@ -83,13 +83,14 @@ class EnvHelper(BaseModel):
         if os.getenv(variable_key) is not None:
             kwargs[kwargs_key] = os.getenv(variable_key)
         else:
-            try:
-                # Azure Key Vault does not allow underscores in the key name but hyphens
-                variable_key = variable_key.replace("_", "-")
-                secret = secret_client.get_secret(variable_key)
-                kwargs[kwargs_key] = secret.value
-            except ResourceNotFoundError:
-                logging.debug(f"Secret {variable_key} not found in the key vault, it will be unset.")
+            if secret_client is not None:
+                try:
+                    # Azure Key Vault does not allow underscores in the key name but hyphens
+                    variable_key_kv = variable_key.replace("_", "-")
+                    secret = secret_client.get_secret(variable_key_kv)
+                    kwargs[kwargs_key] = secret.value
+                except ResourceNotFoundError:
+                    logging.debug(f"Secret {variable_key} not found in the key vault, it will be unset.")
         # otherwise default value from pydantic model is used
         return kwargs
 
@@ -100,11 +101,14 @@ class EnvHelper(BaseModel):
         else:
             logging.warning("No .env file found.")
 
-        # Using Azure Key Vault when secrets are not set through environment variables
-        key_vault_name = os.environ.get("KEY_VAULT_NAME", "kicwa-keyvault-prod")
-        key_vault_uri = f"https://{key_vault_name}.vault.azure.net/"
-        credential = DefaultAzureCredential()
-        secret_client = SecretClient(vault_url=key_vault_uri, credential=credential)
+        # Optional: Use Azure Key Vault when secrets are not set through environment variables
+        use_kv = os.environ.get("USE_KEY_VAULT", "true").lower() in ("1", "true", "yes")
+        secret_client = None
+        if use_kv:
+            key_vault_name = os.environ.get("KEY_VAULT_NAME", "kicwa-keyvault-prod")
+            key_vault_uri = f"https://{key_vault_name}.vault.azure.net/"
+            credential = DefaultAzureCredential()
+            secret_client = SecretClient(vault_url=key_vault_uri, credential=credential)
 
         # Environment setup
         for key in self.model_json_schema()["properties"].keys():
@@ -160,9 +164,12 @@ class EnvHelper(BaseModel):
 
 
 env = EnvHelper()
-os.environ["LANGFUSE_PUBLIC_KEY"] = env.LANGFUSE_PUBLIC_KEY
-os.environ["LANGFUSE_SECRET_KEY"] = env.LANGFUSE_SECRET_KEY
-os.environ["LANGFUSE_HOST"] = env.LANGFUSE_HOST
+# Safely propagate Langfuse variables to process env if set
+_vals = env.model_dump()
+for _k in ("LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_HOST"):
+    _v = _vals.get(_k)
+    if isinstance(_v, str) and _v != "UNSET":
+        os.environ[_k] = _v
 
 if __name__ == "__main__":
     print(env.get_REST_API_KEYS())

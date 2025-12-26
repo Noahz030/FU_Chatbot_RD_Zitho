@@ -186,9 +186,10 @@ def index():
                         </div>
                     </div>
                     <div class="buttons">
-                        <button onclick="selectVote('A')" id="btn-A">Wähle A</button>
-                        <button onclick="selectVote('tie')" id="btn-tie">Gleichwertig</button>
-                        <button onclick="selectVote('B')" id="btn-B">Wähle B</button>
+                        <button onclick="selectVote('A')" id="btn-A">A ist besser</button>
+                        <button onclick="selectVote('tie')" id="btn-tie">Unentschieden</button>
+                        <button onclick="selectVote('B')" id="btn-B">B ist besser</button>
+                        <button onclick="selectVote('both_bad')" id="btn-both_bad">Beide schlecht</button>
                     </div>
                     <button class="submit" onclick="submitVote('${comp.id}')">Vote abgeben</button>
                 </div>
@@ -206,7 +207,7 @@ def index():
 
         function selectVote(vote) {
             selectedVote = vote;
-            ['A', 'tie', 'B'].forEach(v => {
+            ['A', 'tie', 'B', 'both_bad'].forEach(v => {
                 const btn = document.getElementById('btn-' + v);
                 if (btn) btn.className = v === vote ? 'active' : '';
             });
@@ -281,6 +282,7 @@ def results():
         .vote-A { background:#eef6ff; border-color:#cfe3ff; }
         .vote-B { background:#f4e8ff; border-color:#e3d3ff; }
         .vote-tie { background:#eef7ee; border-color:#d7ead7; }
+        .vote-both_bad { background:#ffe8e8; border-color:#ffcccc; }
         .muted { color:#666; font-size:12px; }
         .nowrap { white-space: nowrap; }
         .q { max-width: 420px; }
@@ -336,8 +338,9 @@ def results():
 
         function pill(vote) {
             if (!vote) return '<span class="pill">-</span>';
-            const cls = vote === 'A' ? 'vote-A' : vote === 'B' ? 'vote-B' : 'vote-tie';
-            return `<span class="pill ${cls}">${vote}</span>`;
+            const cls = vote === 'A' ? 'vote-A' : vote === 'B' ? 'vote-B' : vote === 'tie' ? 'vote-tie' : 'vote-both_bad';
+            const label = vote === 'both_bad' ? 'Beide schlecht' : vote;
+            return `<span class="pill ${cls}">${label}</span>`;
         }
 
         function truncate(t, n=140) { if (!t) return ''; return t.length>n ? t.slice(0,n)+'…' : t; }

@@ -41,7 +41,7 @@ class SaveComparisonRequest(BaseModel):
 
 class VoteRequest(BaseModel):
     comparison_id: str
-    vote: Literal["A", "B", "tie"]
+    vote: Literal["A", "B", "tie", "both_bad"]
     comment: Optional[str] = None
 
 
@@ -80,7 +80,13 @@ def get_all_comparisons():
 
 @app.get("/arena/statistics")
 def get_statistics():
-    return default_storage.get_statistics()
+    stats = default_storage.get_statistics()
+    # Ensure both_bad fields are included even if not in response
+    if 'votes_both_bad' not in stats:
+        stats['votes_both_bad'] = 0
+    if 'both_bad_rate' not in stats:
+        stats['both_bad_rate'] = 0
+    return stats
 
 
 @app.get("/arena/comparison/{comparison_id}")

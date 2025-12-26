@@ -8,7 +8,7 @@ import json
 import time
 import uuid
 from datetime import datetime
-from typing import AsyncGenerator, Literal, Optional
+from typing import AsyncGenerator, Literal, Optional, Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,9 +17,8 @@ from llama_index.core.llms import ChatMessage, MessageRole
 from pydantic import BaseModel, Field
 
 from src.env import env
-from src.llm.assistant import KICampusAssistant
-from src.llm.LLMs import Models
-from src.openwebui.assistant_improved import KICampusAssistantImproved
+# Wichtige Imports für LLM-Assistenten werden lazy innerhalb der Funktionen geladen,
+# damit Arena-Endpunkte ohne vollständige LLM/Monitoring-Dependencies funktionieren.
 from src.openwebui.voting_system import default_storage, ArenaComparison
 
 app = FastAPI(
@@ -43,6 +42,7 @@ _assistant_improved = None
 def get_assistant_original():
     global _assistant_original
     if _assistant_original is None:
+        from src.llm.assistant import KICampusAssistant  # lazy import
         _assistant_original = KICampusAssistant()
     return _assistant_original
 
@@ -50,6 +50,7 @@ def get_assistant_original():
 def get_assistant_improved():
     global _assistant_improved
     if _assistant_improved is None:
+        from src.openwebui.assistant_improved import KICampusAssistantImproved  # lazy import
         _assistant_improved = KICampusAssistantImproved()
     return _assistant_improved
 
@@ -115,10 +116,10 @@ def convert_to_llama_messages(messages: list[Message]) -> list[ChatMessage]:
 
 
 async def stream_llm_response(
-    assistant: KICampusAssistant,
+    assistant: Any,
     query: str,
     chat_history: list[ChatMessage],
-    model: Models,
+    model: Any,
     request_model: str,
 ) -> AsyncGenerator[str, None]:
     """
@@ -233,7 +234,8 @@ async def chat_completions(request: ChatCompletionRequest):
     # Chat-History ohne die letzte User-Nachricht
     chat_history = llama_messages[:-1]
     
-    # Verwende GPT-4 als Basis-Modell
+    # Verwende GPT-4 als Basis-Modell (lazy import to avoid startup failures)
+    from src.llm.LLMs import Models
     llm_model = Models.GPT4
     
     # Streaming-Response
@@ -316,7 +318,7 @@ class SaveComparisonRequest(BaseModel):
 class VoteRequest(BaseModel):
     """Request body für das Voten."""
     comparison_id: str
-    vote: Literal["A", "B", "tie"]
+    vote: Literal["A", "B", "tie", "both_bad"]
     comment: Optional[str] = None
 
 

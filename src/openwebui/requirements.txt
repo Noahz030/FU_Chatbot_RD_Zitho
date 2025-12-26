@@ -1,11 +1,15 @@
-# OpenWebUI API Requirements
-# Zusätzliche Dependencies für OpenWebUI-Integration
+fastapi~=0.127.0
+uvicorn[standard]~=0.34.0
+pydantic~=2.12.0
+python-dotenv~=1.0.1
+openai~=1.16.2
+qdrant-client~=1.16.0
+langfuse~=2.52.0
+azure-identity~=1.17.1
+azure-keyvault-secrets~=4.8.0
 
-# Bereits im Hauptprojekt vorhanden (aus root requirements):
-# fastapi>=0.100.0
-# uvicorn[standard]>=0.23.0
-# pydantic>=2.0.0
-# langfuse
-# llama-index
-
-# Falls spezifische Versionen für OpenWebUI nötig sind, hier eintragen
+# LlamaIndex - install core and let dependencies resolve
+llama-index-core~=0.14.10
+llama-index-embeddings-azure-openai
+llama-index-llms-azure-openai
+llama-index-vector-stores-qdrant

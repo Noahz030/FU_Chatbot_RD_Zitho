@@ -1,8 +1,9 @@
 import datetime
 import threading
 from enum import Enum
+from typing import Union
 
-from langfuse import observe
+from langfuse.decorators import observe
 from llama_index.core import Settings
 from llama_index.core.callbacks import CallbackManager
 from llama_index.core.chat_engine import SimpleChatEngine
@@ -41,59 +42,58 @@ class LLM:
         )
         return embedder
 
-    def get_model(self, model: Models) -> FunctionCallingLLM | llama_llm:
-        match model:
-            case Models.GPT4:
-                llm = AzureOpenAI(
-                    model=env.AZURE_OPENAI_GPT4_MODEL,
-                    deployment=env.AZURE_OPENAI_GPT4_DEPLOYMENT,
-                    api_key=env.AZURE_OPENAI_API_KEY,
-                    azure_endpoint=env.AZURE_OPENAI_URL,
-                    api_version="2023-05-15",
-                    callback_manager=Settings.callback_manager,
-                )
-            case Models.MISTRAL8:
-                llm = AzureAICompletionsModel(
-                    credential=env.AZURE_MISTRAL_KEY, endpoint=env.AZURE_MISTRAL_URL, model_name="mistral-large"
-                )
-                # GWDG instruct model for chat currently not working
-                # llm = OpenAILike(
-                #     model="mixtral-8x7b-instruct",
-                #     is_chat_model=True,
-                #     temperature=0,
-                #     max_tokens=400,
-                #     api_key=env.GWDG_API_KEY,
-                #     api_base=env.GWDG_URL,
-                #     api_version="v1",
-                #     logprobs=None,
-                #     callback_manager=Settings.callback_manager,
-                # )
-            case Models.LLAMA3:
-                llm = OpenAILike(
-                    model="llama-3.3-70b-instruct",
-                    is_chat_model=True,
-                    temperature=0,
-                    max_tokens=400,
-                    api_key=env.GWDG_API_KEY,
-                    api_base=env.GWDG_URL,
-                    api_version="v1",
-                    logprobs=None,
-                    callback_manager=Settings.callback_manager,
-                )
-            case Models.QWEN2:
-                llm = OpenAILike(
-                    model="qwen2-72b-instruct",
-                    is_chat_model=True,
-                    temperature=0,
-                    max_tokens=400,
-                    api_key=env.GWDG_API_KEY,
-                    api_base=env.GWDG_URL,
-                    api_version="v1",
-                    logprobs=None,
-                    callback_manager=Settings.callback_manager,
-                )
-            case _:
-                raise ValueError(f"Model '{model}' not yet supported")
+    def get_model(self, model: Models) -> Union[FunctionCallingLLM, llama_llm]:
+        if model == Models.GPT4:
+            llm = AzureOpenAI(
+                model=env.AZURE_OPENAI_GPT4_MODEL,
+                deployment=env.AZURE_OPENAI_GPT4_DEPLOYMENT,
+                api_key=env.AZURE_OPENAI_API_KEY,
+                azure_endpoint=env.AZURE_OPENAI_URL,
+                api_version="2023-05-15",
+                callback_manager=Settings.callback_manager,
+            )
+        elif model == Models.MISTRAL8:
+            llm = AzureAICompletionsModel(
+                credential=env.AZURE_MISTRAL_KEY, endpoint=env.AZURE_MISTRAL_URL, model_name="mistral-large"
+            )
+            # GWDG instruct model for chat currently not working
+            # llm = OpenAILike(
+            #     model="mixtral-8x7b-instruct",
+            #     is_chat_model=True,
+            #     temperature=0,
+            #     max_tokens=400,
+            #     api_key=env.GWDG_API_KEY,
+            #     api_base=env.GWDG_URL,
+            #     api_version="v1",
+            #     logprobs=None,
+            #     callback_manager=Settings.callback_manager,
+            # )
+        elif model == Models.LLAMA3:
+            llm = OpenAILike(
+                model="llama-3.3-70b-instruct",
+                is_chat_model=True,
+                temperature=0,
+                max_tokens=400,
+                api_key=env.GWDG_API_KEY,
+                api_base=env.GWDG_URL,
+                api_version="v1",
+                logprobs=None,
+                callback_manager=Settings.callback_manager,
+            )
+        elif model == Models.QWEN2:
+            llm = OpenAILike(
+                model="qwen2-72b-instruct",
+                is_chat_model=True,
+                temperature=0,
+                max_tokens=400,
+                api_key=env.GWDG_API_KEY,
+                api_base=env.GWDG_URL,
+                api_version="v1",
+                logprobs=None,
+                callback_manager=Settings.callback_manager,
+            )
+        else:
+            raise ValueError(f"Model '{model}' not yet supported")
         return llm
 
     @observe()

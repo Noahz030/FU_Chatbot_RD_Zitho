@@ -25,7 +25,7 @@ class ArenaComparison(BaseModel):
     model_b: str = Field(description="Name des zweiten Modells")
     answer_b: str = Field(description="Antwort von Modell B")
     
-    vote: Optional[Literal["A", "B", "tie"]] = Field(default=None, description="Voting-Ergebnis")
+    vote: Optional[Literal["A", "B", "tie", "both_bad"]] = Field(default=None, description="Voting-Ergebnis")
     vote_timestamp: Optional[str] = Field(default=None, description="Wann wurde gevotet")
     comment: Optional[str] = Field(default=None, description="Optional: Kommentar zum Vote")
 
@@ -71,7 +71,7 @@ class VotingStorage:
                 return comp
         return None
     
-    def update_vote(self, comparison_id: str, vote: Literal["A", "B", "tie"], comment: Optional[str] = None) -> bool:
+    def update_vote(self, comparison_id: str, vote: Literal["A", "B", "tie", "both_bad"], comment: Optional[str] = None) -> bool:
         """
         Updated einen existierenden Vergleich mit Vote-Informationen.
         
@@ -111,6 +111,7 @@ class VotingStorage:
         votes_a = sum(1 for c in comparisons if c.vote == "A")
         votes_b = sum(1 for c in comparisons if c.vote == "B")
         votes_tie = sum(1 for c in comparisons if c.vote == "tie")
+        votes_both_bad = sum(1 for c in comparisons if c.vote == "both_bad")
         
         # Finde häufigste Modell-Namen
         model_names = set()
@@ -125,9 +126,11 @@ class VotingStorage:
             "votes_for_a": votes_a,
             "votes_for_b": votes_b,
             "votes_tie": votes_tie,
+            "votes_both_bad": votes_both_bad,
             "win_rate_a": votes_a / voted if voted > 0 else 0,
             "win_rate_b": votes_b / voted if voted > 0 else 0,
             "tie_rate": votes_tie / voted if voted > 0 else 0,
+            "both_bad_rate": votes_both_bad / voted if voted > 0 else 0,
             "models_seen": list(model_names),
         }
     
