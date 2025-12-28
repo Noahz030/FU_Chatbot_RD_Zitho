@@ -290,7 +290,15 @@ async def chat_completions(request: ChatCompletionRequest):
             "system_fingerprint": None
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"LLM Error: {str(e)}")
+        # Detaillierte Fehlerausgabe zur Diagnose
+        import traceback, sys
+        tb = traceback.format_exc()
+        err_type = type(e).__name__
+        # Logge den Fehler samt Stacktrace in die Container-Logs
+        print(f"LLM Error Type: {err_type}")
+        print(f"LLM Error Message: {e}")
+        print(tb)
+        raise HTTPException(status_code=500, detail=f"LLM Error: {err_type}: {str(e)}")
 
 
 @app.get("/health")

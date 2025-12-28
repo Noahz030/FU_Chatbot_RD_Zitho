@@ -3,6 +3,7 @@ import threading
 from enum import Enum
 from typing import Union
 
+import httpx
 from langfuse.decorators import observe
 from llama_index.core import Settings
 from llama_index.core.callbacks import CallbackManager
@@ -33,16 +34,25 @@ class LLM:
     gwdg_unavailable_since = None
 
     def get_embedder(self) -> AzureOpenAIEmbedding:
+        # Create custom http_client without proxies to avoid compatibility issues
+        # with OpenAI SDK 1.51.0 and LlamaIndex 0.10.68
+        http_client = httpx.Client()
+        
         embedder = AzureOpenAIEmbedding(
             model=env.AZURE_OPENAI_EMBEDDER_MODEL,
             deployment_name=env.AZURE_OPENAI_EMBEDDER_DEPLOYMENT,
             api_key=env.AZURE_OPENAI_API_KEY,
             azure_endpoint=env.AZURE_OPENAI_URL,
             api_version="2023-05-15",
+            http_client=http_client,
         )
         return embedder
 
     def get_model(self, model: Models) -> Union[FunctionCallingLLM, llama_llm]:
+        # Create custom http_client without proxies to avoid compatibility issues
+        # with OpenAI SDK 1.51.0 and LlamaIndex 0.10.68
+        http_client = httpx.Client()
+        
         if model == Models.GPT4:
             llm = AzureOpenAI(
                 model=env.AZURE_OPENAI_GPT4_MODEL,
@@ -51,6 +61,7 @@ class LLM:
                 azure_endpoint=env.AZURE_OPENAI_URL,
                 api_version="2023-05-15",
                 callback_manager=Settings.callback_manager,
+                http_client=http_client,
             )
         elif model == Models.MISTRAL8:
             llm = AzureAICompletionsModel(
@@ -79,6 +90,7 @@ class LLM:
                 api_version="v1",
                 logprobs=None,
                 callback_manager=Settings.callback_manager,
+                http_client=http_client,
             )
         elif model == Models.QWEN2:
             llm = OpenAILike(
@@ -91,6 +103,7 @@ class LLM:
                 api_version="v1",
                 logprobs=None,
                 callback_manager=Settings.callback_manager,
+                http_client=http_client,
             )
         else:
             raise ValueError(f"Model '{model}' not yet supported")
@@ -128,6 +141,9 @@ class LLM:
             try:
                 result.append(chat_engine.chat(message=query))  # Execute the chat function
             except Exception as e:
+                import traceback
+                print(f"LLM.chat error: {type(e).__name__}: {e}")
+                print(traceback.format_exc())
                 result.append(e)  # If error, store the exception in the result
 
         thread = threading.Thread(target=target)

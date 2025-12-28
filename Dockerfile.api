@@ -32,13 +32,14 @@ RUN pip install --upgrade pip && \
     llama-index-callbacks-langfuse==0.1.6 \
     llama-index-vector-stores-qdrant==0.2.14 \
     llamaapi==0.1.36 \
-    openai==1.16.2 \
+    openai==1.51.0 \
     python-dotenv==1.0.1 \
     webvtt-py==0.4.6 \
     langfuse==2.43.1 \
     azure-identity \
     azure-keyvault-secrets \
-    pydantic-settings && \
+    pydantic-settings \
+    lingua-language-detector==2.0.2 && \
     python -c "import nltk; nltk.download('punkt_tab', download_dir='/tmp/nltk_data', quiet=True)" && \
     mkdir -p /tmp/nltk_data && chmod -R 777 /tmp/nltk_data
 
