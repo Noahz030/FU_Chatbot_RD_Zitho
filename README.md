@@ -69,6 +69,7 @@ docker compose -f docker-compose.prod.yml up -d
 - Secrets: Do not commit `.env`. Prefer environment variables or Azure Key Vault.
 - NLTK: Container preloads `punkt_tab` and sets `NLTK_DATA=/tmp/nltk_data` for LlamaIndex.
 - Rate limiting: Enabled for `/arena/*` routes in Nginx. Adjust in [nginx/nginx.conf](nginx/nginx.conf).
+- Fixed questions (Arena/RAGAS): [data/fixed_questions.txt](data/fixed_questions.txt) ist der verbindliche Katalog. Seeder lokal: `python scripts/arena_seed_with_llm.py --input data/fixed_questions.txt --api-url http://127.0.0.1:8001`. Im Container: Datei ins API-Container-Volume kopieren (`docker cp data/fixed_questions.txt fu-arena-api:/app/data/`) und mit `--input /app/data/fixed_questions.txt` seeden.
 
 #### Production Follow-ups
 - TLS certificates: Place `fullchain.pem` and `privkey.pem` in `nginx/ssl/` for HTTPS.

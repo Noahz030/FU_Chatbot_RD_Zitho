@@ -1,0 +1,60 @@
+Welche Lernstile werden dem Maschinellen Lernen zugrunde gelegt?
+Welche Potentiale oder Risiken entstehen durch KI für das Wohl von Patient:innen?
+Wie wird KI eingesetzt, um Krankheiten wie Krebs besser zu diagnostizieren?
+Welche Artikel des EU AI Act sind relevant für die Risikoklasse inakzeptables Risiko?
+Wie funktionieren Neuronale Netze?
+Welches der folgenden Ziele werden im EU AI Act verfolgt?
+Gibt es KI-Lügendetektoren?
+Wie wird das Berufsbild des Mediziners durch Data Science verändert?
+What is AI thinking vs acting?
+Was sind BIAS?
+Was ist Parametrisierung?
+Ich verstehe noch nicht ganz, wie die KI-Winter entstehen?
+Welche Faktoren beeinflussen die Qualität von Antworten eines Large Language Models?
+Wie erstelle ich eine Mermaid Mindmap mit KI?
+Was bedeutet: Ein System basierend auf GPU und Deep Learning?
+Was sind Gütekriterien bei der Datenerhebung?
+Was versteht man unter Datenvorverarbeitung im Kontext von Machine Learning?
+Welche Rolle spielen Trainingsdaten bei der Leistungsfähigkeit von KI-Modellen?
+Gebe bitte einfache Beispiele für diskriminative KI.
+Wozu ist der KI-Lernassistent gedacht?
+Was bedeutet die Abkürzung HPI?
+Could you explain embeddings?
+Can you explain the difference between LSTM and GRU?
+Can you explain how to create an LSTM with Python?
+Was ist tmin in Python?
+Wenn man KI-Campus auf HessenHub OER-Spaeti mit Hilfe einer JSON-Datei ablegen möchte, welches Format sollte man wählen?
+What are PROs and CONs of XAI Methods?
+Welche Grundkonzepte des Maschinellen Lernens werden in den KI-Campus-Kursen vermittelt?
+Was ist der Unterschied zwischen überwachten, unüberwachten und bestärkenden Lernverfahren?
+Welche Programmiersprachen werden im Bereich Data Science häufig eingesetzt?
+Ich erhalte die Fehlermeldung 'The Vimeo video could not be loaded'. Was soll ich tun?
+Wo finde ich den Prompt-Katalog?
+Wie kann ich mich registrieren?
+Kannst du auch Videos erstellen?
+Auf dieser Seite wird kein Video angezeigt. Woran kann das liegen?
+Gibt es die Möglichkeit, bei KI-Campus einen Lernpfad aus unterschiedlichen Formaten zusammenzustellen?
+Wie lade ich ein Foto hoch?
+Ich habe mein Passwort vergessen, aber es kommt keine Mail an. Woran kann das liegen?
+Wie informiert der KI-Campus Nutzer:innen über technische Störungen oder Wartungsarbeiten?
+Ich kann 'Meine Kurse' nicht aufrufen. Ist die Plattform derzeit nicht erreichbar?
+Lernziel-Check war negativ. Habe ich noch 2 Versuche?
+Wann erhält man einen Leistungsnachweis?
+Kann ich nur die Quiz machen, um das Zertifikat zu erhalten?
+Was kann ich mit den Badges der Plattform machen?
+Erscheint die Punktzahl auf dem Zertifikat?
+Reicht es, wenn ich nur alle Übungsaufgaben der Wochen beantworte?
+Was steht in der Teilnahmebestätigung und im Leistungsnachweis?
+Für welche Kurse ist ein Micro-Degree erhältlich?
+Are you accessible for free?
+Wie viele Module umfasst der Kurs?
+Zu welchen Themen kann ich dir Fragen stellen?
+Ich möchte selbst einen Chatbot erstellen. Kannst du mir dabei helfen?
+What extra value do you bring for me as a student?
+Do you have information only about AI topics?
+Gibt es auf dieser Seite Quiz, um den Wissensstand zu testen? Wo genau finde ich diese?
+Kannst du mir bei der Orientierung auf der Plattform helfen?
+Wie gehst du vor, wenn du eine Frage nicht sicher beantworten kannst?
+Can you explain how you use provided documents to answer questions?
+Welche Einschränkungen hast du als Chatbot?
+Willst du mir verraten, wie du als Chatbot konstruiert bist?
