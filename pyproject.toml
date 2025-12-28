@@ -13,6 +13,11 @@ packages = [
 
 [tool.poetry.dependencies]
 python = "~3.11"
+# Web framework
+fastapi = "0.109.0"
+uvicorn = {extras = ["standard"], version = "0.27.0"}
+pydantic = "2.5.3"
+# RAG & LLM
 qdrant-client = "1.10.1"
 llama-index = "0.10.68"
 llama-index-embeddings-azure-openai = "0.1.11"

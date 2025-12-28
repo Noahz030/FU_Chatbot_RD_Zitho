@@ -1,0 +1,124 @@
+version: "3.9"
+
+services:
+  # Arena API - OpenWebUI-kompatible API mit RAG
+  arena-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: fu-arena-api
+    env_file:
+      - .env
+    environment:
+      PYTHONUNBUFFERED: "1"
+      # Arena-spezifisch
+      STORAGE_PATH: /data/arena_votes.jsonl
+      USE_KEY_VAULT: "false"  # Or "true" with Managed Identity on VM
+    volumes:
+      - arena_data:/data
+    ports:
+      - "8001:8001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8001/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - arena_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Voting UI - FastAPI interface
+  arena-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.ui
+    container_name: fu-arena-ui
+    environment:
+      API_BASE_URL: http://arena-api:8001
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      arena-api:
+        condition: service_healthy
+    ports:
+      - "8002:8002"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8002/"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - arena_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Nginx Reverse Proxy + TLS
+  nginx:
+    image: nginx:stable-alpine
+    container_name: fu-arena-nginx
+    depends_on:
+      arena-api:
+        condition: service_healthy
+      arena-ui:
+        condition: service_healthy
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - nginx_cache:/var/cache/nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    restart: unless-stopped
+    networks:
+      - arena_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # PostgreSQL (optional, for future use)
+  postgres:
+    image: postgres:16-alpine
+    container_name: fu-arena-postgres
+    environment:
+      POSTGRES_DB: arena
+      POSTGRES_USER: arena_user
+      POSTGRES_PASSWORD: changeme_in_prod
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - arena_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arena_user -d arena"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  arena_data:
+    driver: local
+  postgres_data:
+    driver: local
+  nginx_cache:
+    driver: local
+
+networks:
+  arena_network:
+    driver: bridge
