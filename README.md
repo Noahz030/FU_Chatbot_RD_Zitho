@@ -18,6 +18,64 @@ Go into the src/frontend folder and run:
 
 ## Docker
 
+### Deployment (Containers)
+- Overview: The Arena API and lightweight Voting UI are containerized and orchestrated via [docker-compose.prod.yml](docker-compose.prod.yml). Images are built from [Dockerfile.api](Dockerfile.api) and [Dockerfile.ui](Dockerfile.ui), fronted by Nginx ([nginx/nginx.conf](nginx/nginx.conf)).
+- Data: Votes persist in the `arena_data` volume as `/data/arena_votes.jsonl` inside the API container.
+- Config: Use [.env.prod.example](.env.prod.example) as a template; create `.env` or `.env.prod` with real values.
+
+#### Quick Start (Local)
+```zsh
+docker compose -f docker-compose.prod.yml build
+docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml ps
+
+# Health checks
+curl -fsS http://127.0.0.1:8001/health
+curl -fsS http://127.0.0.1:8002/ | head -1
+
+# Stats
+curl -fsS http://127.0.0.1:8001/arena/statistics | python -m json.tool | head -20
+```
+
+#### Access
+- API (local): http://127.0.0.1:8001
+- Voting UI (local): http://127.0.0.1:8002/
+
+#### Operations
+```zsh
+# Logs
+docker compose -f docker-compose.prod.yml logs -f arena-api arena-ui
+
+# Restart services
+docker compose -f docker-compose.prod.yml restart arena-api arena-ui
+
+# Stop / remove
+docker compose -f docker-compose.prod.yml down --remove-orphans
+
+# Rebuild after code changes
+docker compose -f docker-compose.prod.yml build
+docker compose -f docker-compose.prod.yml up -d
+```
+
+#### Scripts (optional helpers)
+- Deploy lifecycle: [scripts/deploy.sh](scripts/deploy.sh)
+    - `./scripts/deploy.sh deploy` builds, restarts, runs health checks.
+- Backups: [scripts/backup.sh](scripts/backup.sh)
+    - Creates dated JSONL backups under `/var/backups/arena` and prunes by retention.
+- Monitoring: [scripts/healthcheck.sh](scripts/healthcheck.sh)
+    - Checks API/UI health, Docker status, disk usage, prints stats.
+
+#### Configuration Notes
+- Secrets: Do not commit `.env`. Prefer environment variables or Azure Key Vault.
+- NLTK: Container preloads `punkt_tab` and sets `NLTK_DATA=/tmp/nltk_data` for LlamaIndex.
+- Rate limiting: Enabled for `/arena/*` routes in Nginx. Adjust in [nginx/nginx.conf](nginx/nginx.conf).
+
+#### Production Follow-ups
+- TLS certificates: Place `fullchain.pem` and `privkey.pem` in `nginx/ssl/` for HTTPS.
+- DNS: Point your domain to the host running the stack; update CORS in `.env`.
+- VM: Install Docker + Compose, copy repo, run `deploy.sh deploy`.
+- Observability: Add alerts (email/Slack), schedule backups via cron.
+
 ## How to build and run Image
 `docker login` <br />
 `docker build -t fatemeh001/kicampus_chatbot:0.0.1 .` <br />
