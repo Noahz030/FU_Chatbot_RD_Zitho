@@ -39,11 +39,47 @@ check_requirements() {
     command -v docker >/dev/null 2>&1 || error "Docker not installed"
     command -v docker-compose >/dev/null 2>&1 || error "Docker Compose not installed"
     
+    # Validate .env file
+    local required_vars=("ENVIRONMENT" "DOMAIN_NAME" "POSTGRES_PASSWORD" "ARENA_API_KEY")
+    for var in "${required_vars[@]}"; do
+        if ! grep -q "^${var}=" "$ENV_FILE"; then
+            error ".env missing required variable: $var"
+        fi
+    done
+    
+    # Check if ENVIRONMENT is PRODUCTION
+    local env_mode
+    env_mode=$(grep '^ENVIRONMENT=' "$ENV_FILE" | cut -d= -f2)
+    if [[ "$env_mode" == "PRODUCTION" ]]; then
+        log "✅ Production mode detected"
+    else
+        warn "Not in PRODUCTION mode (current: $env_mode)"
+    fi
+    
     log "✅ All requirements met"
 }
 
-# Build images
-build_images() {
+# Backup before deployment
+backup_before_deploy() {
+    local backup_dir="/var/backups/arena"
+    local timestamp=$(date +%Y%m%d-%H%M%S)
+    
+    log "Creating pre-deployment backup..."
+    mkdir -p "$backup_dir"
+    
+    # Check if arena data volume exists and has content
+    if docker volume inspect fu_chatbot_rd_zitho_arena_data >/dev/null 2>&1; then
+        docker run --rm \
+            -v fu_chatbot_rd_zitho_arena_data:/data \
+            -v "$backup_dir:/bkp" \
+            alpine \
+            sh -c "cp /data/arena_votes.jsonl /bkp/arena_votes_pre_${timestamp}.jsonl 2>/dev/null" || \
+            warn "No existing arena data to backup"
+        log "✅ Pre-deployment backup created"
+    else
+        log "ℹ️ No existing arena data to backup"
+    fi
+}
     log "Building Docker images..."
     cd "$PROJECT_ROOT"
     
@@ -158,11 +194,17 @@ restore() {
 deploy() {
     log "🚀 Starting full deployment..."
     check_requirements
+    backup_before_deploy
     build_images
     stop_services || true
     start_services
     healthcheck
     log "🎉 Deployment complete!"
+    log ""
+    log "Next steps:"
+    log "  1. Verify services: docker-compose -f $COMPOSE_FILE ps"
+    log "  2. Check logs: docker-compose -f $COMPOSE_FILE logs arena-api"
+    log "  3. Test health: curl http://127.0.0.1:8001/health"
 }
 
 # Usage

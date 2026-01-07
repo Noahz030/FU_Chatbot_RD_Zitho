@@ -96,7 +96,7 @@ get_stats() {
 check_docker() {
     log "Checking Docker services..."
     
-    local containers=("fu-arena-api" "fu-arena-ui" "fu-arena-nginx" "fu-arena-postgres")
+    local containers=("fu-arena-api" "fu-arena-ui" "fu-arena-nginx" "fu-arena-postgres" "fu-arena-certbot")
     local failed=0
     
     for container in "${containers[@]}"; do
@@ -105,6 +105,8 @@ check_docker() {
         
         if [[ "$status" == "running" ]]; then
             log "  ✅ $container: running"
+        elif [[ "$status" == "missing" ]]; then
+            warn "  ⚠️ $container: not created (OK for first deployment)"
         else
             error "  ❌ $container: $status"
             ((failed++))
@@ -124,10 +126,14 @@ check_disk() {
     
     # Check /data volume
     local data_usage
-    data_usage=$(docker run --rm \
-        -v fu_arena_arena_data:/data \
-        alpine \
-        du -sh /data | cut -f1) || data_usage="unknown"
+    if docker volume inspect fu_chatbot_rd_zitho_arena_data >/dev/null 2>&1; then
+        data_usage=$(docker run --rm \
+            -v fu_chatbot_rd_zitho_arena_data:/data \
+            alpine \
+            du -sh /data | cut -f1) || data_usage="unknown"
+    else
+        data_usage="no volume"
+    fi
     
     log "  Backups: $backup_usage"
     log "  Arena data: $data_usage"

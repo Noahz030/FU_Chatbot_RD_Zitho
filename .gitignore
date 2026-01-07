@@ -22,4 +22,6 @@ FailedTranscripts.xlsx
 
 ## Arena runtime data (do not commit)
 src/openwebui/data/*.jsonl
-src/openwebui/arena_comparisons.json
+src/openwebui/arena_comparisons.jsonnginx/ssl/*.pem
+voting_ui.log
+voting_ui.pid

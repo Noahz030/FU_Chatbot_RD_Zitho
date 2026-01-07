@@ -5,14 +5,16 @@ Inkludiert Arena Voting System für Benchmarking.
 
 import asyncio
 import json
+import os
 import time
 import uuid
 from datetime import datetime
-from typing import AsyncGenerator, Literal, Optional, Any
+from typing import AsyncGenerator, Literal, Optional, Any, Annotated
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Header, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.security import APIKeyHeader
 from llama_index.core.llms import ChatMessage, MessageRole
 from pydantic import BaseModel, Field
 
@@ -27,12 +29,48 @@ app = FastAPI(
     version="1.0.0",
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS mit konfigurierbaren Origins
+allowed_origins = os.getenv("CORS_ORIGINS", "*").split(",")
+if allowed_origins == ["*"]:
+    # Development: Allow all
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    # Production: Restrict to specific domains
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["*"],
+        allow_credentials=True,
+    )
+
+# API Key Authentication für Arena-Endpunkte
+api_key_header = APIKeyHeader(name="X-Arena-Key", auto_error=False)
+
+
+async def verify_arena_key(api_key: Optional[str] = Depends(api_key_header)):
+    """Verifiziere API-Key für Arena-Endpunkte (nur in Production)"""
+    # In Production Mode: API-Key erforderlich
+    if os.getenv("ENVIRONMENT", "LOCAL") == "PRODUCTION":
+        arena_api_key = os.getenv("ARENA_API_KEY")
+        if not arena_api_key:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Arena API key not configured on server",
+            )
+        if not api_key or api_key != arena_api_key:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or missing Arena API key",
+                headers={"WWW-Authenticate": "ApiKey"},
+            )
+    # In LOCAL/STAGING: Kein API-Key erforderlich
+    return True
 
 # Lazy-Loading der Assistenten (erst beim ersten Request)
 _assistant_original = None
@@ -331,7 +369,7 @@ class VoteRequest(BaseModel):
 
 
 @app.post("/arena/save-comparison")
-def save_comparison(request: SaveComparisonRequest):
+def save_comparison(request: SaveComparisonRequest, auth: bool = Depends(verify_arena_key)):
     """
     Speichert einen neuen Arena-Vergleich.
     
@@ -357,7 +395,7 @@ def save_comparison(request: SaveComparisonRequest):
 
 
 @app.post("/arena/vote")
-def submit_vote(request: VoteRequest):
+def submit_vote(request: VoteRequest, auth: bool = Depends(verify_arena_key)):
     """
     Submitted einen Vote für einen existierenden Vergleich.
     """
@@ -377,7 +415,7 @@ def submit_vote(request: VoteRequest):
 
 
 @app.get("/arena/comparisons")
-def get_all_comparisons():
+def get_all_comparisons(auth: bool = Depends(verify_arena_key)):
     """
     Gibt alle gespeicherten Vergleiche zurück.
     """
@@ -389,7 +427,7 @@ def get_all_comparisons():
 
 
 @app.get("/arena/statistics")
-def get_statistics():
+def get_statistics(auth: bool = Depends(verify_arena_key)):
     """
     Gibt Statistiken über alle Votes zurück.
     """
@@ -398,7 +436,7 @@ def get_statistics():
 
 
 @app.get("/arena/comparison/{comparison_id}")
-def get_comparison(comparison_id: str):
+def get_comparison(comparison_id: str, auth: bool = Depends(verify_arena_key)):
     """
     Gibt einen spezifischen Vergleich zurück.
     """

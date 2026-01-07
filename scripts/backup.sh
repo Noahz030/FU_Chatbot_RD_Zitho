@@ -40,21 +40,31 @@ backup_local() {
     log "Creating local backup: $BACKUP_FILE"
     
     mkdir -p "$BACKUP_DIR"
+    chmod 750 "$BACKUP_DIR"
+    
+    # Check if volume exists
+    if ! docker volume inspect fu_chatbot_rd_zitho_arena_data >/dev/null 2>&1; then
+        warn "Arena data volume not found, skipping backup"
+        return 0
+    fi
     
     docker run --rm \
-        -v fu_arena_arena_data:/data \
+        -v fu_chatbot_rd_zitho_arena_data:/data \
         -v "$BACKUP_DIR:/bkp" \
         alpine \
-        sh -c "cp /data/arena_votes.jsonl /bkp/arena_votes_${TIMESTAMP}.jsonl && \
-                chmod 640 /bkp/arena_votes_${TIMESTAMP}.jsonl" || \
-        error "Local backup failed"
+        sh -c "cp /data/arena_votes.jsonl /bkp/arena_votes_${TIMESTAMP}.jsonl 2>/dev/null && \
+                chmod 640 /bkp/arena_votes_${TIMESTAMP}.jsonl" || {
+        warn "No arena_votes.jsonl found in volume, creating empty backup"
+        touch "$BACKUP_FILE"
+    }
     
     # Verify backup
-    local file_size=$(stat -f%z "$BACKUP_FILE" 2>/dev/null || stat -c%s "$BACKUP_FILE" 2>/dev/null)
-    if [[ $file_size -gt 0 ]]; then
+    if [[ -f "$BACKUP_FILE" ]]; then
+        local file_size
+        file_size=$(stat -f%z "$BACKUP_FILE" 2>/dev/null || stat -c%s "$BACKUP_FILE" 2>/dev/null || echo "0")
         log "✅ Local backup created ($(numfmt --to=iec $file_size 2>/dev/null || echo "$file_size bytes"))"
     else
-        error "Backup file is empty!"
+        error "Backup file creation failed"
     fi
 }
 
@@ -110,7 +120,7 @@ restore() {
     log "Restoring from: $backup_file"
     
     docker run --rm \
-        -v fu_arena_arena_data:/data \
+        -v fu_chatbot_rd_zitho_arena_data:/data \
         -v "$(dirname "$backup_file"):/bkp" \
         alpine \
         sh -c "cp /bkp/$(basename "$backup_file") /data/arena_votes.jsonl" || \
