@@ -1,0 +1,77 @@
+# Model Registry Configuration
+# Defines all available chatbot versions for Arena
+# Version-agnostic configuration enables plug-and-play version management
+
+models:
+  # Original KI-Campus Assistant
+  kicampus-v1:
+    name: "KI-Campus (Original)"
+    description: "Original chatbot with 10-message context window"
+    enabled: true
+    params:
+      context_window: 10
+      model_enum: "gpt4"
+    source: "src.llm.assistant:KICampusAssistant"
+    release_date: "2025-01-01"
+    tags:
+      - "original"
+      - "baseline"
+      - "stable"
+
+  # Improved KI-Campus Assistant (extended context)
+  kicampus-v1-improved:
+    name: "KI-Campus (Improved)"
+    description: "Enhanced chatbot with 15-message context window"
+    enabled: true
+    params:
+      context_window: 15
+      model_enum: "gpt4"
+    source: "src.llm.assistant_improved:KICampusAssistantImproved"
+    release_date: "2025-06-01"
+    tags:
+      - "improved"
+      - "extended-context"
+      - "stable"
+
+  # KI-Campus v2 (Future - from upstream)
+  # Uncomment when available in upstream repository
+  # kicampus-v2:
+  #   name: "KI-Campus v2.0"
+  #   description: "Next generation chatbot with improved reasoning"
+  #   enabled: false
+  #   params:
+  #     context_window: 20
+  #     model_enum: "gpt4"
+  #   source: "src.llm.assistant_v2:KICampusAssistantV2"
+  #   release_date: "2026-01-15"
+  #   tags:
+  #     - "v2"
+  #     - "extended-context"
+  #     - "testing"
+
+# Arena configuration
+arena:
+  # List of model IDs enabled in voting UI
+  # Add/remove model IDs here to control which versions are available for voting
+  enabled_models:
+    - "kicampus-v1"
+    - "kicampus-v1-improved"
+    # - "kicampus-v2"  # Uncomment to enable v2 in Arena
+
+  # Default model to use if not specified
+  default_model: "kicampus-v1-improved"
+
+  # Model comparison settings
+  comparison:
+    # Allow voting on different versions
+    allow_version_comparisons: true
+    
+    # Track version info in votes
+    track_version_metadata: true
+
+# Configuration metadata
+_metadata:
+  version: "1.0"
+  last_updated: "2026-01-09"
+  description: "Plug-and-play model registry for Chatbot Arena"
+  documentation: "See CHATBOT_VERSIONING.md for implementation details"
