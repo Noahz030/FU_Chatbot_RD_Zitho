@@ -36,10 +36,14 @@ id_ecdsa
 id_ed25519
 
 # SSL/TLS Private Keys (certificates are auto-generated, never commit)
-nginx/ssl/*.pem
-nginx/ssl/*.key
+# Include BACKUPS - even .bak files contain sensitive keys!
+nginx/ssl/
 **/privkey.pem
+**/privkey.pem.bak*
 **/private.key
+**/fullchain.pem*
+*.key
+*.pem
 
 # PGP/GPG Keys
 secring.*
