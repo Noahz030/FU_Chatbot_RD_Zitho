@@ -33,7 +33,7 @@ RUN poetry install --with api --no-interaction --no-ansi
 USER appuser
 WORKDIR /home/appuser
 
-COPY --chown=appuser:appuser . ./
+COPY --chown=appuser:appuser . ./ 
 
 #  ╭──────────────────────────────────────────────────────────╮
 #  │                     Runtime - Stage                      │
@@ -49,6 +49,9 @@ WORKDIR /home/appuser
 
 COPY --from=build $VENV_PATH $VENV_PATH
 COPY --from=build --chown=appuser:appuser /home/appuser /home/appuser
+
+# Create config directory (should come from COPY --from=build)
+RUN test -d /home/appuser/config || mkdir -p /home/appuser/config
 
 RUN mkdir nltk_data
 ENV NLTK_DATA=nltk_data

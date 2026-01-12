@@ -17,8 +17,11 @@ COPY pyproject.toml poetry.lock* ./
 RUN poetry config virtualenvs.create false \
     && poetry install --no-interaction --no-ansi --with api
 
-# Copy source code
+# Copy all source code
 COPY . .
+
+# Create config if it doesn't exist from the COPY above
+RUN test -d /app/config || mkdir -p /app/config
 
 # Expose port
 EXPOSE 8001

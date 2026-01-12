@@ -29,6 +29,7 @@ llama-index-vector-stores-qdrant = "0.2.14"
 llamaapi = "~0.1.36"
 openai = "~1.51.0"
 python-dotenv = "~1.0.1"
+pyyaml = "~6.0"
 # Self hosting llms
 webvtt-py = "~0.4.6"
 # Monitoring

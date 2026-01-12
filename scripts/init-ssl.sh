@@ -1,226 +1,167 @@
 #!/bin/bash
-#
-# init-ssl.sh - Initialize SSL certificates with Let's Encrypt
+# ============================================================================
+# Arena Production SSL Certificate Initialization Script
+# ============================================================================
 # 
-# Usage:
-#   ./scripts/init-ssl.sh <domain> <email>
+# This script initializes Let's Encrypt SSL certificates for Arena.
+# Works for both domain-based and IP-based deployments.
 #
-# Example:
-#   ./scripts/init-ssl.sh arena.example.com admin@example.com
+# Usage:
+#   ./scripts/init-ssl.sh
 #
 # Prerequisites:
-#   - Docker and Docker Compose installed
-#   - Domain DNS pointing to server IP
-#   - Ports 80/443 open in firewall
+#   - Docker and docker-compose installed
+#   - DOMAIN_NAME set in .env.production
+#   - CERTBOT_EMAIL set in .env.production
+#   - Ports 80 and 443 accessible from internet
 #
+# ============================================================================
 
-set -e
+set -e  # Exit on error
 
-# Color codes for output
+# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Logging function
-log() {
-    echo -e "${GREEN}[$(date +'%Y-%m-%d %H:%M:%S')]${NC} $1"
-}
+echo -e "${BLUE}╔════════════════════════════════════════════════════════╗${NC}"
+echo -e "${BLUE}║   Arena SSL Certificate Initialization Script         ║${NC}"
+echo -e "${BLUE}╚════════════════════════════════════════════════════════╝${NC}"
+echo ""
 
-error() {
-    echo -e "${RED}[ERROR]${NC} $1" >&2
-}
+# Check if running as root
+if [[ $EUID -ne 0 ]] && ! groups | grep -q docker; then
+   echo -e "${RED}⚠️  This script must be run as root or with docker group access${NC}"
+   exit 1
+fi
 
-warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
+# Load environment variables
+if [ ! -f ".env.production" ]; then
+    echo -e "${RED}❌ Error: .env.production file not found${NC}"
+    echo -e "${YELLOW}   Please create .env.production from .env.production.template${NC}"
+    exit 1
+fi
 
-# Check arguments
-if [ "$#" -ne 2 ]; then
-    error "Usage: $0 <domain> <email>"
+source .env.production
+
+# Validate required variables
+if [ -z "$DOMAIN_NAME" ]; then
+    echo -e "${RED}❌ Error: DOMAIN_NAME not set in .env.production${NC}"
+    exit 1
+fi
+
+if [ -z "$CERTBOT_EMAIL" ]; then
+    echo -e "${RED}❌ Error: CERTBOT_EMAIL not set in .env.production${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✓ Environment loaded${NC}"
+echo -e "  Domain: ${YELLOW}$DOMAIN_NAME${NC}"
+echo -e "  Email:  ${YELLOW}$CERTBOT_EMAIL${NC}"
+echo ""
+
+# Check if domain is an IP address
+if [[ $DOMAIN_NAME =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo -e "${YELLOW}⚠️  DOMAIN_NAME appears to be an IP address${NC}"
+    echo -e "${YELLOW}   Let's Encrypt does not support IP-based certificates${NC}"
+    echo -e "${YELLOW}   Falling back to self-signed certificate...${NC}"
     echo ""
-    echo "Example: $0 arena.example.com admin@example.com"
-    exit 1
-fi
-
-DOMAIN=$1
-EMAIL=$2
-
-log "🔐 Initializing SSL certificates for ${BLUE}${DOMAIN}${NC}"
-
-# Validate domain format
-if [[ ! $DOMAIN =~ ^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]?\.[a-zA-Z]{2,}$ ]]; then
-    error "Invalid domain format: ${DOMAIN}"
-    exit 1
-fi
-
-# Validate email format
-if [[ ! $EMAIL =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-    error "Invalid email format: ${EMAIL}"
-    exit 1
-fi
-
-# Check if Docker is running
-if ! docker info >/dev/null 2>&1; then
-    error "Docker is not running. Please start Docker and try again."
-    exit 1
-fi
-
-# Check if .env file exists
-if [ ! -f .env ]; then
-    warning ".env file not found. Creating from template..."
-    if [ -f .env.example ]; then
-        cp .env.example .env
-        log "Created .env from .env.example"
+    
+    # Generate self-signed certificate
+    mkdir -p ./nginx/ssl
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+        -keyout ./nginx/ssl/privkey.pem \
+        -out ./nginx/ssl/fullchain.pem \
+        -subj "/C=DE/ST=Berlin/L=Berlin/O=KI-Campus/CN=$DOMAIN_NAME"
+    
+    # Create directories for certbot structure
+    mkdir -p ./certbot/conf/live/arena
+    
+    # Create symlinks
+    ln -sf $(pwd)/nginx/ssl/fullchain.pem ./certbot/conf/live/arena/fullchain.pem
+    ln -sf $(pwd)/nginx/ssl/privkey.pem ./certbot/conf/live/arena/privkey.pem
+    
+    echo -e "${GREEN}✓ Self-signed certificate generated${NC}"
+    echo -e "${YELLOW}⚠️  Warning: Browsers will show security warnings${NC}"
+    echo ""
+else
+    echo -e "${BLUE}📡 Checking DNS resolution...${NC}"
+    if ! host $DOMAIN_NAME > /dev/null 2>&1; then
+        echo -e "${RED}❌ Error: Domain $DOMAIN_NAME does not resolve${NC}"
+        echo -e "${YELLOW}   Please ensure DNS A record is configured${NC}"
+        exit 1
+    fi
+    
+    RESOLVED_IP=$(host $DOMAIN_NAME | grep "has address" | awk '{print $4}' | head -1)
+    echo -e "${GREEN}✓ Domain resolves to: $RESOLVED_IP${NC}"
+    echo ""
+    
+    # Check if nginx is running
+    if docker ps | grep -q fu-arena-nginx; then
+        echo -e "${YELLOW}⚠️  Nginx is already running, will restart for certificate challenge${NC}"
+        docker compose -f docker-compose.prod.yml stop nginx
+    fi
+    
+    # Generate DH parameters if not exists
+    if [ ! -f "./nginx/dhparam.pem" ]; then
+        echo -e "${BLUE}🔐 Generating Diffie-Hellman parameters (this may take a few minutes)...${NC}"
+        openssl dhparam -out ./nginx/dhparam.pem 2048
+        echo -e "${GREEN}✓ DH parameters generated${NC}"
+    fi
+    
+    # Start nginx for ACME challenge
+    echo -e "${BLUE}🚀 Starting nginx for Let's Encrypt ACME challenge...${NC}"
+    docker compose -f docker-compose.prod.yml up -d nginx
+    
+    # Wait for nginx to be ready
+    sleep 5
+    
+    # Obtain certificate
+    echo -e "${BLUE}📜 Requesting SSL certificate from Let's Encrypt...${NC}"
+    docker compose -f docker-compose.prod.yml run --rm certbot certonly \
+        --webroot \
+        --webroot-path=/var/www/certbot \
+        --email $CERTBOT_EMAIL \
+        --agree-tos \
+        --no-eff-email \
+        --force-renewal \
+        -d $DOMAIN_NAME
+    
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✓ SSL certificate obtained successfully${NC}"
+        
+        # Create symlink for nginx config
+        mkdir -p ./certbot/conf/live/arena
+        ln -sf ../$(basename $(ls -dt ./certbot/conf/live/* | head -1))/fullchain.pem ./certbot/conf/live/arena/fullchain.pem
+        ln -sf ../$(basename $(ls -dt ./certbot/conf/live/* | head -1))/privkey.pem ./certbot/conf/live/arena/privkey.pem
     else
-        error "No .env or .env.example file found. Please create one."
+        echo -e "${RED}❌ Failed to obtain SSL certificate${NC}"
         exit 1
     fi
 fi
 
-# Update DOMAIN_NAME in .env
-if grep -q "^DOMAIN_NAME=" .env; then
-    sed -i.bak "s/^DOMAIN_NAME=.*/DOMAIN_NAME=${DOMAIN}/" .env
-    log "Updated DOMAIN_NAME in .env"
+# Reload nginx
+echo -e "${BLUE}🔄 Reloading nginx with new certificate...${NC}"
+docker compose -f docker-compose.prod.yml restart nginx
+
+# Wait and test
+sleep 3
+if docker ps | grep -q fu-arena-nginx; then
+    echo -e "${GREEN}✓ Nginx reloaded successfully${NC}"
 else
-    echo "DOMAIN_NAME=${DOMAIN}" >> .env
-    log "Added DOMAIN_NAME to .env"
-fi
-
-# Create temporary nginx config for HTTP-only (ACME challenge)
-log "📝 Creating temporary HTTP-only nginx configuration..."
-
-cat > nginx/nginx.conf.tmp << 'EOF'
-user nginx;
-worker_processes auto;
-error_log /var/log/nginx/error.log warn;
-pid /var/run/nginx.pid;
-
-events {
-    worker_connections 1024;
-}
-
-http {
-    include /etc/nginx/mime.types;
-    default_type application/octet-stream;
-
-    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
-                    '$status $body_bytes_sent "$http_referer" '
-                    '"$http_user_agent"';
-
-    access_log /var/log/nginx/access.log main;
-
-    sendfile on;
-    keepalive_timeout 65;
-
-    server {
-        listen 80;
-        server_name _;
-
-        location /.well-known/acme-challenge/ {
-            root /var/www/certbot;
-        }
-
-        location / {
-            return 200 'SSL initialization in progress...';
-            add_header Content-Type text/plain;
-        }
-    }
-}
-EOF
-
-# Backup original nginx config
-if [ -f nginx/nginx.conf ]; then
-    cp nginx/nginx.conf nginx/nginx.conf.backup
-    log "Backed up original nginx.conf"
-fi
-
-# Use temporary config
-cp nginx/nginx.conf.tmp nginx/nginx.conf
-
-# Start nginx with temporary config
-log "🚀 Starting nginx for ACME challenge..."
-docker compose -f docker-compose.prod.yml up -d nginx
-
-# Wait for nginx to be ready
-sleep 5
-
-# Request certificate from Let's Encrypt
-log "📜 Requesting SSL certificate from Let's Encrypt..."
-log "Domain: ${DOMAIN}"
-log "Email: ${EMAIL}"
-
-docker compose -f docker-compose.prod.yml run --rm certbot certonly \
-    --webroot \
-    --webroot-path=/var/www/certbot \
-    --email ${EMAIL} \
-    --agree-tos \
-    --no-eff-email \
-    --force-renewal \
-    -d ${DOMAIN}
-
-# Check if certificate was created
-if docker compose -f docker-compose.prod.yml exec certbot test -d "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem"; then
-    log "✅ Certificate successfully obtained!"
-else
-    error "Certificate creation failed. Please check the logs above."
-    
-    # Restore original config
-    if [ -f nginx/nginx.conf.backup ]; then
-        mv nginx/nginx.conf.backup nginx/nginx.conf
-        log "Restored original nginx.conf"
-    fi
-    
+    echo -e "${RED}❌ Nginx failed to start${NC}"
+    docker compose -f docker-compose.prod.yml logs nginx
     exit 1
 fi
 
-# Restore original nginx config with SSL
-if [ -f nginx/nginx.conf.backup ]; then
-    mv nginx/nginx.conf.backup nginx/nginx.conf
-    log "Restored SSL-enabled nginx.conf"
-fi
-
-# Update nginx config with actual domain name
-sed -i.bak "s/server_name _;/server_name ${DOMAIN};/g" nginx/nginx.conf
-log "Updated server_name in nginx.conf to ${DOMAIN}"
-
-# Restart services with SSL enabled
-log "🔄 Restarting services with SSL enabled..."
-docker compose -f docker-compose.prod.yml down
-docker compose -f docker-compose.prod.yml up -d
-
-# Wait for services to be healthy
-log "⏳ Waiting for services to become healthy..."
-sleep 10
-
-# Verify SSL
-log "🔍 Verifying SSL configuration..."
-
-if curl -fsS --max-time 5 https://${DOMAIN}/health >/dev/null 2>&1; then
-    echo ""
-    log "✅ ${GREEN}SSL setup complete!${NC}"
-    echo ""
-    log "🌐 Your services are now available at:"
-    echo "   • https://${DOMAIN} (Voting UI)"
-    echo "   • https://${DOMAIN}/arena/ (Arena API)"
-    echo "   • https://${DOMAIN}/results (Results Page)"
-    echo ""
-    log "🔐 Certificate details:"
-    docker compose -f docker-compose.prod.yml exec certbot certbot certificates
-    echo ""
-    log "♻️  Auto-renewal: Enabled (certbot container runs renewal check every 12h)"
-    echo ""
-else
-    warning "SSL configuration completed, but HTTPS verification failed."
-    warning "This might be a DNS propagation issue. Please verify manually:"
-    echo ""
-    echo "   curl -I https://${DOMAIN}/health"
-    echo ""
-fi
-
-# Cleanup
-rm -f nginx/nginx.conf.tmp
-rm -f nginx/nginx.conf.bak
-
-log "🎉 SSL initialization complete!"
+echo ""
+echo -e "${GREEN}╔════════════════════════════════════════════════════════╗${NC}"
+echo -e "${GREEN}║   ✅ SSL Certificate Setup Complete!                   ║${NC}"
+echo -e "${GREEN}╚════════════════════════════════════════════════════════╝${NC}"
+echo ""
+echo -e "${BLUE}Arena is now accessible at:${NC}"
+echo -e "  ${GREEN}https://$DOMAIN_NAME${NC}"
+echo ""
+echo -e "${YELLOW}Note: Certificate will auto-renew every 12 hours via certbot container${NC}"

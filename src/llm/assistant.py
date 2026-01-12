@@ -9,7 +9,9 @@ from src.llm.tools.question_answerer import QuestionAnswerer
 
 
 class KICampusAssistant:
-    def __init__(self):
+    def __init__(self, **kwargs):
+        # Accept kwargs from ModelRegistry for version management compatibility
+        # Reserved for future use: context_window, model_enum, etc.
         self.retriever = KiCampusRetriever()
 
         self.contextualizer = Contextualizer()

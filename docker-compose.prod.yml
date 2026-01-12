@@ -8,16 +8,21 @@ services:
       dockerfile: Dockerfile.api
     container_name: fu-arena-api
     env_file:
-      - .env
+      - .env.production
     environment:
       PYTHONUNBUFFERED: "1"
-      # Arena-spezifisch
+      ENVIRONMENT: "LOCAL"  # Set to LOCAL for testing (no API key), PRODUCTION for deployment
+      # Arena-specific
       STORAGE_PATH: /data/arena_votes.jsonl
-      USE_KEY_VAULT: "false"  # Or "true" with Managed Identity on VM
+      # Azure Key Vault integration
+      USE_KEY_VAULT: "${USE_KEY_VAULT:-true}"
+      KEY_VAULT_NAME: "${KEY_VAULT_NAME:-kicwa-keyvault-prod}"
+      # CORS Origins from environment
+      CORS_ORIGINS: "${CORS_ORIGINS:-*}"
     volumes:
       - arena_data:/data
     ports:
-      - "8001:8001"
+      - "127.0.0.1:8001:8001"  # Only bind to localhost, nginx will proxy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8001/health"]
@@ -42,11 +47,13 @@ services:
     environment:
       API_BASE_URL: http://arena-api:8001
       PYTHONUNBUFFERED: "1"
+      # Override API base for production (empty = auto-detect)
+      ARENA_API_BASE: ""
     depends_on:
       arena-api:
         condition: service_healthy
     ports:
-      - "8002:8002"
+      - "127.0.0.1:8002:8002"  # Only bind to localhost, nginx will proxy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8002/"]
@@ -71,10 +78,10 @@ services:
         condition: service_healthy
       arena-ui:
         condition: service_healthy
-    environment:
-      - DOMAIN_NAME=${DOMAIN_NAME:-localhost}
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/nginx.conf.prod:/etc/nginx/nginx.conf:ro
+      - ./nginx/dhparam.pem:/etc/nginx/dhparam.pem
+      - ./nginx/ssl:/etc/nginx/ssl:ro
       - certbot_conf:/etc/letsencrypt:ro
       - certbot_www:/var/www/certbot:ro
       - nginx_cache:/var/cache/nginx

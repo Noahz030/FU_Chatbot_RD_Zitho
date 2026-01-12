@@ -19,6 +19,7 @@ from llama_index.core.llms import ChatMessage, MessageRole
 from pydantic import BaseModel, Field
 
 from src.env import env
+from src.llm.model_registry import get_registry
 # Wichtige Imports für LLM-Assistenten werden lazy innerhalb der Funktionen geladen,
 # damit Arena-Endpunkte ohne vollständige LLM/Monitoring-Dependencies funktionieren.
 from src.openwebui.voting_system import default_storage, ArenaComparison
@@ -72,25 +73,38 @@ async def verify_arena_key(api_key: Optional[str] = Depends(api_key_header)):
     # In LOCAL/STAGING: Kein API-Key erforderlich
     return True
 
-# Lazy-Loading der Assistenten (erst beim ersten Request)
-_assistant_original = None
-_assistant_improved = None
+# Lazy-Loading der Assistenten via ModelRegistry
+# Assistants are loaded on-demand to avoid failures during startup
+_assistants_cache: dict[str, Any] = {}
 
 
-def get_assistant_original():
-    global _assistant_original
-    if _assistant_original is None:
-        from src.llm.assistant import KICampusAssistant  # lazy import
-        _assistant_original = KICampusAssistant()
-    return _assistant_original
-
-
-def get_assistant_improved():
-    global _assistant_improved
-    if _assistant_improved is None:
-        from src.openwebui.assistant_improved import KICampusAssistantImproved  # lazy import
-        _assistant_improved = KICampusAssistantImproved()
-    return _assistant_improved
+async def get_assistant(model_id: str) -> Any:
+    """
+    Get or create assistant instance for a model
+    Uses registry for dynamic loading and caching
+    
+    Args:
+        model_id: Model identifier (e.g., "kicampus-v1")
+        
+    Returns:
+        Assistant instance
+        
+    Raises:
+        HTTPException: If model not found or disabled
+    """
+    global _assistants_cache
+    
+    if model_id not in _assistants_cache:
+        try:
+            registry = get_registry()
+            _assistants_cache[model_id] = registry.get_or_create_assistant(model_id)
+        except (ValueError, ImportError) as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to load model '{model_id}': {str(e)}"
+            )
+    
+    return _assistants_cache[model_id]
 
 
 class Message(BaseModel):
@@ -120,23 +134,38 @@ class ModelsResponse(BaseModel):
 
 @app.get("/")
 def root():
+    try:
+        registry = get_registry()
+        enabled_models = registry.get_enabled_models()
+    except Exception:
+        enabled_models = []
+    
     return {
         "status": "online",
         "service": "KI-Campus Chatbot Arena",
-        "available_models": ["kicampus-original", "kicampus-improved"],
+        "available_models": enabled_models,
         "llm_backend": "Azure OpenAI + GWDG",
         "azure_configured": bool(env.AZURE_OPENAI_API_KEY),
+        "version_management": "ModelRegistry (config/models.yaml)",
     }
 
 
 @app.get("/v1/models")
 def list_models() -> ModelsResponse:
-    return ModelsResponse(
-        data=[
-            ModelInfo(id="kicampus-original", created=1700000000, owned_by="ki-campus"),
-            ModelInfo(id="kicampus-improved", created=1700000000, owned_by="ki-campus"),
-        ]
-    )
+    """List all available models from registry"""
+    registry = get_registry()
+    enabled_models = registry.get_enabled_models()
+    
+    models = []
+    for model_id in enabled_models:
+        config = registry.get_model_config(model_id)
+        models.append(ModelInfo(
+            id=config.id,
+            created=int(config.release_datetime.timestamp()),
+            owned_by="ki-campus"
+        ))
+    
+    return ModelsResponse(data=models)
 
 
 def convert_to_llama_messages(messages: list[Message]) -> list[ChatMessage]:
@@ -244,16 +273,19 @@ async def chat_completions(request: ChatCompletionRequest):
     """
     OpenAI-kompatible Chat-Completions mit echter LLM-Integration.
     Unterstützt sowohl Streaming als auch nicht-Streaming Responses.
+    
+    Models werden dynamisch aus dem Registry geladen.
     """
     
-    if request.model not in ["kicampus-original", "kicampus-improved"]:
-        raise HTTPException(status_code=400, detail=f"Unknown model: {request.model}")
+    # Validate model
+    try:
+        registry = get_registry()
+        registry.get_model_config(request.model)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     
-    # Wähle den richtigen Assistenten
-    if request.model == "kicampus-original":
-        assistant = get_assistant_original()
-    else:
-        assistant = get_assistant_improved()
+    # Get assistant via registry
+    assistant = await get_assistant(request.model)
     
     # Extrahiere User-Query und Chat-History
     if not request.messages:
@@ -415,15 +447,33 @@ def submit_vote(request: VoteRequest, auth: bool = Depends(verify_arena_key)):
 
 
 @app.get("/arena/comparisons")
-def get_all_comparisons(auth: bool = Depends(verify_arena_key)):
+def get_all_comparisons(subset: Optional[int] = None, auth: bool = Depends(verify_arena_key)):
     """
-    Gibt alle gespeicherten Vergleiche zurück.
+    Gibt alle gespeicherten Vergleiche zurück, optional gefiltert nach subset_id.
+    
+    Parameters:
+    - subset: Optional subset_id (1-4) zum Filtern der Vergleiche
     """
-    comparisons = default_storage.load_all_comparisons()
+    if subset is not None:
+        comparisons = default_storage.get_comparisons_by_subset(subset)
+    else:
+        comparisons = default_storage.load_all_comparisons()
+    
     return {
         "total": len(comparisons),
-        "comparisons": [c.model_dump() for c in comparisons]
+        "comparisons": [c.model_dump() for c in comparisons],
+        "subset": subset
     }
+
+
+@app.get("/arena/assign-subset")
+def assign_subset(auth: bool = Depends(verify_arena_key)):
+    """
+    Weist einen Subset (1-4) per Round-Robin-Verfahren zu.
+    Basiert auf der Anzahl der bisherigen Votes pro Subset.
+    """
+    subset_id = default_storage.assign_subset_round_robin()
+    return {"subset_id": subset_id}
 
 
 @app.get("/arena/statistics")

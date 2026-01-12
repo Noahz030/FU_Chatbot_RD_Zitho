@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arena Subset Test</title>
+    <style>
+        body {
+            font-family: system-ui;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .test-section {
+            border: 1px solid #ddd;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+        button {
+            background: #0066cc;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0052a3;
+        }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        .success {
+            color: green;
+        }
+        .error {
+            color: red;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎯 Arena Subset System Test</h1>
+    
+    <div class="test-section">
+        <h2>1. Subset Assignment</h2>
+        <button onclick="testAssignSubset()">Get Assigned Subset</button>
+        <pre id="assign-result">Click button to test...</pre>
+    </div>
+    
+    <div class="test-section">
+        <h2>2. Fetch Subset Questions</h2>
+        <label>Subset ID: 
+            <select id="subset-select">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+            </select>
+        </label>
+        <button onclick="testFetchSubset()">Fetch Subset</button>
+        <pre id="fetch-result">Select subset and click fetch...</pre>
+    </div>
+    
+    <div class="test-section">
+        <h2>3. LocalStorage Test</h2>
+        <button onclick="testLocalStorage()">Test Session Persistence</button>
+        <button onclick="clearLocalStorage()">Clear LocalStorage</button>
+        <pre id="storage-result">Click to test...</pre>
+    </div>
+
+    <div class="test-section">
+        <h2>4. Full Voting Flow Test</h2>
+        <button onclick="testFullFlow()">Simulate Full User Flow</button>
+        <pre id="flow-result">Click to simulate...</pre>
+    </div>
+
+    <script>
+        const API = window.location.origin;
+
+        async function testAssignSubset() {
+            const result = document.getElementById('assign-result');
+            result.textContent = 'Fetching...';
+            
+            try {
+                const resp = await fetch(`${API}/arena/assign-subset`);
+                const data = await resp.json();
+                
+                if (resp.ok) {
+                    result.innerHTML = `<span class="success">✅ SUCCESS</span>\n${JSON.stringify(data, null, 2)}`;
+                    localStorage.setItem('arena_subset', data.subset_id);
+                } else {
+                    result.innerHTML = `<span class="error">❌ ERROR ${resp.status}</span>\n${JSON.stringify(data, null, 2)}`;
+                }
+            } catch (e) {
+                result.innerHTML = `<span class="error">❌ EXCEPTION</span>\n${e.message}`;
+            }
+        }
+
+        async function testFetchSubset() {
+            const subsetId = document.getElementById('subset-select').value;
+            const result = document.getElementById('fetch-result');
+            result.textContent = 'Fetching...';
+            
+            try {
+                const resp = await fetch(`${API}/arena/comparisons?subset=${subsetId}`);
+                const data = await resp.json();
+                
+                if (resp.ok) {
+                    result.innerHTML = `<span class="success">✅ SUCCESS</span>\nTotal: ${data.total} comparisons in subset ${data.subset}\n${JSON.stringify(data.comparisons.slice(0, 2), null, 2)}\n... (showing first 2)`;
+                } else {
+                    result.innerHTML = `<span class="error">❌ ERROR ${resp.status}</span>\n${JSON.stringify(data, null, 2)}`;
+                }
+            } catch (e) {
+                result.innerHTML = `<span class="error">❌ EXCEPTION</span>\n${e.message}`;
+            }
+        }
+
+        function testLocalStorage() {
+            const result = document.getElementById('storage-result');
+            
+            // Test write
+            localStorage.setItem('arena_subset', '3');
+            localStorage.setItem('test_timestamp', new Date().toISOString());
+            
+            // Test read
+            const subset = localStorage.getItem('arena_subset');
+            const timestamp = localStorage.getItem('test_timestamp');
+            
+            result.innerHTML = `<span class="success">✅ LocalStorage Working</span>\nStored subset: ${subset}\nTimestamp: ${timestamp}`;
+        }
+
+        function clearLocalStorage() {
+            localStorage.removeItem('arena_subset');
+            localStorage.removeItem('test_timestamp');
+            document.getElementById('storage-result').innerHTML = '<span class="success">✅ Cleared</span>';
+        }
+
+        async function testFullFlow() {
+            const result = document.getElementById('flow-result');
+            result.textContent = 'Running full flow test...\n\n';
+            
+            try {
+                // Step 1: Check for existing subset
+                let subset = localStorage.getItem('arena_subset');
+                result.textContent += `Step 1: Check LocalStorage → ${subset || 'None found'}\n`;
+                
+                // Step 2: Assign if needed
+                if (!subset) {
+                    result.textContent += 'Step 2: Requesting subset assignment...\n';
+                    const resp = await fetch(`${API}/arena/assign-subset`);
+                    const data = await resp.json();
+                    subset = data.subset_id;
+                    localStorage.setItem('arena_subset', subset);
+                    result.textContent += `Step 2: Assigned subset ${subset}\n`;
+                } else {
+                    result.textContent += `Step 2: Using existing subset ${subset}\n`;
+                }
+                
+                // Step 3: Fetch questions
+                result.textContent += `Step 3: Fetching comparisons for subset ${subset}...\n`;
+                const resp = await fetch(`${API}/arena/comparisons?subset=${subset}`);
+                const data = await resp.json();
+                result.textContent += `Step 3: Loaded ${data.total} questions\n`;
+                
+                // Step 4: Simulate progress
+                const voted = data.comparisons.filter(c => c.vote).length;
+                const remaining = data.total - voted;
+                result.textContent += `Step 4: Progress → ${voted}/${data.total} voted, ${remaining} remaining\n`;
+                
+                result.innerHTML += `\n<span class="success">✅ FULL FLOW SUCCESS</span>`;
+            } catch (e) {
+                result.innerHTML += `\n<span class="error">❌ FLOW FAILED: ${e.message}</span>`;
+            }
+        }
+
+        // Auto-run on load
+        window.addEventListener('load', () => {
+            const stored = localStorage.getItem('arena_subset');
+            if (stored) {
+                document.getElementById('storage-result').innerHTML = 
+                    `<span class="success">ℹ️ Session detected</span>\nSubset: ${stored}`;
+            }
+        });
+    </script>
+</body>
+</html>

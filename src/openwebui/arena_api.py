@@ -73,8 +73,11 @@ def submit_vote(request: VoteRequest):
 
 
 @app.get("/arena/comparisons")
-def get_all_comparisons():
-    comparisons = default_storage.load_all_comparisons()
+def get_all_comparisons(subset: Optional[int] = None):
+    if subset is not None:
+        comparisons = default_storage.get_comparisons_by_subset(subset)
+    else:
+        comparisons = default_storage.load_all_comparisons()
     return {"total": len(comparisons), "comparisons": [c.model_dump() for c in comparisons]}
 
 
@@ -95,3 +98,10 @@ def get_comparison(comparison_id: str):
     if not c:
         raise HTTPException(status_code=404, detail="Comparison not found")
     return c.model_dump()
+
+
+@app.get("/arena/assign-subset")
+def assign_subset():
+    """Weist dem User ein Subset zu (Round-Robin basierend auf Vote-Counts)."""
+    subset_id = default_storage.assign_subset_round_robin()
+    return {"subset_id": subset_id, "message": f"Du wurdest Subset {subset_id} zugewiesen"}

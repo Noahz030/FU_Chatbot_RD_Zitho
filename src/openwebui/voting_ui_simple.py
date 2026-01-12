@@ -33,7 +33,8 @@ else:
 @app.get("/", response_class=HTMLResponse)
 def index():
     """Einfaches Voting UI"""
-    return """
+    api_override = os.getenv("ARENA_API_BASE", "").rstrip("/")
+    html = """
 <!DOCTYPE html>
 <html>
 <head>
@@ -121,21 +122,62 @@ def index():
     </div>
 
     <script>
-        // API Endpoint (explicit IPv4 to avoid localhost resolution quirks)
-        const API = 'http://127.0.0.1:8001';
+        // API base: allow override for direct UI (8002) vs. nginx proxy
+        const API_OVERRIDE = "__API_OVERRIDE__";
+        const API = (API_OVERRIDE && API_OVERRIDE.trim() !== "")
+            ? API_OVERRIDE.replace(/\/$/, '')
+            : (window.location.port === "8002"
+                ? window.location.origin.replace(":8002", ":8001").replace(/\/$/, '')
+                : window.location.origin.replace(/\/$/, ''));
         let comparisons = [];
         let currentIndex = 0;
         let selectedVote = null;
+        let assignedSubset = null;
+        let totalInSubset = 0;
+        let votedInSubset = 0;
+
+        // Session-Tracking via LocalStorage
+        function getAssignedSubset() {
+            const stored = localStorage.getItem('arena_subset');
+            if (stored) {
+                return parseInt(stored, 10);
+            }
+            return null;
+        }
+
+        function setAssignedSubset(subset) {
+            localStorage.setItem('arena_subset', subset.toString());
+            assignedSubset = subset;
+        }
+
+        async function assignSubsetIfNeeded() {
+            assignedSubset = getAssignedSubset();
+            if (assignedSubset === null) {
+                try {
+                    const resp = await fetch(API + '/arena/assign-subset');
+                    const data = await resp.json();
+                    setAssignedSubset(data.subset_id);
+                    console.log('Assigned subset:', data.subset_id);
+                } catch (e) {
+                    console.error('Failed to assign subset:', e);
+                    assignedSubset = 1; // Fallback
+                }
+            }
+        }
 
         // Debug: Show we started
         document.getElementById('container').innerHTML = '<div class="loading">⏳ JavaScript läuft, starte Fetch...</div>';
 
         async function load() {
             const container = document.getElementById('container');
-            container.innerHTML = '<div class="loading">⏳ Fetching von ' + API + '...</div>';
+            
+            // Subset zuweisen falls noch nicht geschehen
+            await assignSubsetIfNeeded();
+            
+            container.innerHTML = '<div class="loading">⏳ Fetching Subset ' + assignedSubset + ' von ' + API + '...</div>';
             
             try {
-                const resp = await fetch(API + '/arena/comparisons', {
+                const resp = await fetch(API + '/arena/comparisons?subset=' + assignedSubset, {
                     method: 'GET',
                     headers: {
                         'Accept': 'application/json'
@@ -150,11 +192,13 @@ def index():
                 
                 const data = await resp.json();
                 comparisons = data.comparisons || [];
+                totalInSubset = comparisons.length;
+                votedInSubset = comparisons.filter(c => c.vote).length;
                 
-                container.innerHTML = '<div class="loading">⏳ ' + comparisons.length + ' Vergleiche geladen, rendere...</div>';
+                container.innerHTML = '<div class="loading">⏳ ' + comparisons.length + ' Vergleiche in Subset ' + assignedSubset + ' geladen...</div>';
                 
                 if (comparisons.length === 0) {
-                    container.innerHTML = '<div class="error">⚠️ Keine Vergleiche in der Datenbank</div>';
+                    container.innerHTML = '<div class="error">⚠️ Keine Vergleiche in diesem Subset</div>';
                     return;
                 }
                 
@@ -162,7 +206,7 @@ def index():
             } catch (e) {
                 container.innerHTML = 
                     '<div class="error">❌ Fehler beim Laden<br>' + 
-                    'API: ' + API + '/arena/comparisons<br>' +
+                    'API: ' + API + '/arena/comparisons?subset=' + assignedSubset + '<br>' +
                     'Error: ' + e.message + '<br>' +
                     'Stack: ' + (e.stack || 'no stack') + '</div>';
             }
@@ -179,15 +223,25 @@ def index():
             const unvoted = comparisons.filter(c => !c.vote);
 
             if (unvoted.length === 0) {
-                container.innerHTML = '<div class="loading">✅ Alle Vergleiche abgestimmt!</div>';
+                container.innerHTML = `
+                    <div class="loading">
+                        <h2>✅ Alle Fragen in deinem Subset beantwortet!</h2>
+                        <p>Du hast ${totalInSubset} von ${totalInSubset} Fragen bewertet.</p>
+                        <p>Vielen Dank für deine Teilnahme! 🎉</p>
+                    </div>
+                `;
                 return;
             }
 
             const comp = unvoted[0];
             selectedVote = null;
+            
+            // Progress-Indicator
+            const progress = `Frage ${votedInSubset + 1} von ${totalInSubset} (Subset ${assignedSubset})`;
 
             container.innerHTML = `
                 <div class="comparison">
+                    <p style="color: #666; font-size: 14px; margin: 0 0 12px;">${progress}</p>
                     <h2 id="question"></h2>
                     <div class="answers">
                         <div class="answer a">
@@ -246,8 +300,8 @@ def index():
                 
                 if (resp.ok) {
                     selectedVote = null;
+                    votedInSubset++;
                     await load();
-                    alert('✅ Vote gespeichert!');
                 } else {
                     alert('❌ Fehler: ' + resp.statusText);
                 }
@@ -261,7 +315,7 @@ def index():
         
         // Timeout fallback
         setTimeout(function() {
-            if (comparisons.length === 0) {
+            if (comparisons.length === 0 && assignedSubset === null) {
                 document.getElementById('container').innerHTML = 
                     '<div class="error">⚠️ Timeout beim Laden<br>' +
                     'API: <a href="http://127.0.0.1:8001/arena/comparisons" target="_blank">http://127.0.0.1:8001/arena/comparisons</a><br>' +
@@ -272,12 +326,14 @@ def index():
 </body>
 </html>
 """
+    return html.replace("__API_OVERRIDE__", api_override)
 
 
 @app.get("/results", response_class=HTMLResponse)
 def results():
     """Neutrale, read-only Ergebnisliste als Tabelle"""
-    return """
+    api_override = os.getenv("ARENA_API_BASE", "").rstrip("/")
+    html = """
 <!DOCTYPE html>
 <html>
 <head>
@@ -303,16 +359,27 @@ def results():
         .ans { max-width: 460px; }
     </style>
     <script>
-        const API = 'http://127.0.0.1:8001';
+        // API base: allow override for direct UI (8002) vs. nginx proxy
+        const API_OVERRIDE = "__API_OVERRIDE__";
+        const API = (API_OVERRIDE && API_OVERRIDE.trim() !== "")
+            ? API_OVERRIDE.replace(/\/$/, '')
+            : (window.location.port === "8002"
+                ? window.location.origin.replace(":8002", ":8001").replace(/\/$/, '')
+                : window.location.origin.replace(/\/$/, ''));
         let all = [];
         let filtered = [];
+        let currentSubset = 'all';
 
         async function load() {
             const container = document.getElementById('status');
-            container.textContent = 'Lade von ' + API + '/arena/comparisons ...' ;
+            const subsetSel = document.getElementById('subset');
+            const subset = subsetSel ? subsetSel.value : 'all';
+            currentSubset = subset;
+            const url = subset === 'all' ? `${API}/arena/comparisons` : `${API}/arena/comparisons?subset=${subset}`;
+            container.textContent = 'Lade von ' + url;
             try {
-                console.log('Fetching from:', API + '/arena/comparisons');
-                const resp = await fetch(API + '/arena/comparisons', {
+                console.log('Fetching from:', url);
+                const resp = await fetch(url, {
                     method: 'GET',
                     headers: {'Accept': 'application/json'},
                     mode: 'cors'
@@ -330,7 +397,8 @@ def results():
                 console.log('Loaded comparisons:', all.length);
                 
                 applyFilters();
-                container.textContent = all.length + ' Vergleiche geladen';
+                const subsetLabel = subset === 'all' ? 'alle Subsets' : 'Subset ' + subset;
+                container.textContent = all.length + ' Vergleiche geladen (' + subsetLabel + ')';
             } catch (e) {
                 console.error('Load error:', e);
                 container.textContent = '❌ Fehler: ' + e.message + ' | API: ' + API;
@@ -369,6 +437,7 @@ def results():
                     <td class="ans">${truncate(c.answer_b, 160)}</td>
                     <td>${pill(c.vote)}</td>
                     <td class="nowrap muted">${c.vote_timestamp ? c.vote_timestamp.replace('T',' ') : ''}</td>
+                    <td class="nowrap muted">${c.subset_id || (currentSubset !== 'all' ? currentSubset : '-')}</td>
                 </tr>
             `).join('');
             const status = document.getElementById('status');
@@ -377,7 +446,7 @@ def results():
 
 
         function exportCSV() {
-            const header = ['id','timestamp','question','model_a','answer_a','model_b','answer_b','vote','vote_timestamp'];
+            const header = ['id','timestamp','question','model_a','answer_a','model_b','answer_b','vote','vote_timestamp','subset_id'];
             const rows = filtered.map(c => header.map(h => {
                 let val = (c[h] || '').toString();
                 val = val.split('\\n').join(' ');
@@ -401,6 +470,13 @@ def results():
     <h1>Arena Ergebnisse</h1>
     <div class="controls">
         <span id="status" class="muted">-</span>
+        <select id="subset" onchange="load()">
+            <option value="all">Alle Subsets</option>
+            <option value="1">Subset 1</option>
+            <option value="2">Subset 2</option>
+            <option value="3">Subset 3</option>
+            <option value="4">Subset 4</option>
+        </select>
         <select id="filter" onchange="applyFilters()">
             <option value="all">Alle</option>
             <option value="voted">Nur gevotet</option>
@@ -418,15 +494,17 @@ def results():
                 <th>Antwort B</th>
                 <th>Vote</th>
                 <th>Vote-Zeit</th>
+                <th>Subset</th>
             </tr>
         </thead>
         <tbody>
-            <tr><td colspan="6" class="muted">Lade…</td></tr>
+            <tr><td colspan="7" class="muted">Lade…</td></tr>
         </tbody>
     </table>
 </body>
 </html>
 """
+    return html.replace("__API_OVERRIDE__", api_override)
 
 if __name__ == "__main__":
     import uvicorn

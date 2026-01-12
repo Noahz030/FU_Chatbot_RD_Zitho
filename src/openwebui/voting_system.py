@@ -15,6 +15,8 @@ from pydantic import BaseModel, Field
 class ArenaComparison(BaseModel):
     """Ein einzelner Arena-Vergleich zwischen zwei Modellen."""
     
+    model_config = {"extra": "allow"}  # Allow extra fields for backwards compatibility
+    
     id: str = Field(description="Unique ID für diesen Vergleich")
     question: str = Field(description="Die Frage die gestellt wurde")
     timestamp: str = Field(description="ISO timestamp wann die Frage gestellt wurde")
@@ -28,6 +30,7 @@ class ArenaComparison(BaseModel):
     vote: Optional[Literal["A", "B", "tie", "both_bad"]] = Field(default=None, description="Voting-Ergebnis")
     vote_timestamp: Optional[str] = Field(default=None, description="Wann wurde gevotet")
     comment: Optional[str] = Field(default=None, description="Optional: Kommentar zum Vote")
+    subset_id: Optional[int] = Field(default=None, description="Subset 1-4 für User-Assignment")
 
 
 class VotingStorage:
@@ -99,6 +102,24 @@ class VotingStorage:
                 f.write(comp.model_dump_json() + "\n")
         
         return True
+    
+    def get_comparisons_by_subset(self, subset_id: int) -> List[ArenaComparison]:
+        """Filtert Vergleiche nach Subset-ID."""
+        all_comparisons = self.load_all_comparisons()
+        return [c for c in all_comparisons if c.subset_id == subset_id]
+    
+    def assign_subset_round_robin(self) -> int:
+        """Weist ein Subset zu basierend auf Vote-Counts (Round-Robin für faire Verteilung)."""
+        comparisons = self.load_all_comparisons()
+        
+        # Zähle Votes pro Subset
+        subset_votes = {1: 0, 2: 0, 3: 0, 4: 0}
+        for c in comparisons:
+            if c.subset_id and c.vote:
+                subset_votes[c.subset_id] = subset_votes.get(c.subset_id, 0) + 1
+        
+        # Weise Subset mit wenigsten Votes zu
+        return min(subset_votes, key=subset_votes.get)
     
     def get_statistics(self) -> Dict[str, any]:
         """Berechnet Statistiken über alle Votes."""
