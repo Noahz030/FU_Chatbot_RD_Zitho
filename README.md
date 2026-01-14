@@ -1,103 +1,218 @@
-# Dependencies
-- python 3.11
-- poetry 1.7.1 & `poetry install`
-- task: `brew install go-task`
-- install pre-commit hooks: [`pre-commit`](https://github.com/pre-commit/pre-commit) `install`
+# FU Campus Chatbot - Arena Voting System
 
-# Local development
+Leichtes, produktionsreifes System zum Vergleichen und Bewerten von KI-generierten Antworten mit Web-Dashboard und statistischer Auswertung.
 
-## VectorDB [Qdrant](https://github.com/qdrant/qdrant-client)
-`docker pull qdrant/qdrant:v1.6.1`
-`docker run -p 6333:6333 -p 6334:6334 -v $(pwd)/qdrant_storage:/qdrant/storage:z qdrant/qdrant:v1.6.1`
+## 🎯 Überblick
 
-`client = QdrantClient(host =QDRANT_URL, api_key=QDRANT_TOKEN, port=6333, grpc_port=6334 , https=False, prefer_grpc=True)`
+Das System besteht aus zwei Hauptkomponenten:
+- **Arena API** (Port 8001): FastAPI Backend mit Voting-Endpoints und JSONL-basierter Persistenz
+- **Voting Dashboard** (Port 8002): Web-Interface zum Abstimmen und Ergebnisse ansehen
 
-## Run frontent: streamlit
-Go into the src/frontend folder and run:
-`streamlit run frontend.py`
+Alle Votes werden persistent in `arena_votes.jsonl` gespeichert.
 
-## Docker
+## 🚀 Quick Start
 
-### Deployment (Containers)
-- Overview: The Arena API and lightweight Voting UI are containerized and orchestrated via [docker-compose.prod.yml](docker-compose.prod.yml). Images are built from [Dockerfile.api](Dockerfile.api) and [Dockerfile.ui](Dockerfile.ui), fronted by Nginx ([nginx/nginx.conf](nginx/nginx.conf)).
-- Data: Votes persist in the `arena_data` volume as `/data/arena_votes.jsonl` inside the API container.
-- Config: Use [.env.prod.example](.env.prod.example) as a template; create `.env` or `.env.prod` with real values.
+### Local Development (mit Docker)
 
-#### Quick Start (Local)
-```zsh
-docker compose -f docker-compose.prod.yml build
-docker compose -f docker-compose.prod.yml up -d
-docker compose -f docker-compose.prod.yml ps
+```bash
+# Repository klonen
+git clone <repo> && cd FU_Chatbot_RD_Zitho
 
-# Health checks
-curl -fsS http://127.0.0.1:8001/health
-curl -fsS http://127.0.0.1:8002/ | head -1
+# .env Datei vorbereiten (siehe docs/ENVIRONMENT.md)
+cp .env.production.template .env
 
-# Stats
-curl -fsS http://127.0.0.1:8001/arena/statistics | python -m json.tool | head -20
+# Services starten
+ENVIRONMENT=LOCAL docker compose -f docker-compose.prod.yml up -d
+
+# Status überprüfen
+docker ps | grep arena
 ```
 
-#### Access
-- API (local): http://127.0.0.1:8001
-- Voting UI (local): http://127.0.0.1:8002/
+**Zugriff:**
+- 🎯 Voting Dashboard: http://localhost:8002
+- 📊 Statistiken API: http://localhost:8001/arena/statistics
+- 🔍 Alle Comparisons: http://localhost:8001/arena/comparisons
 
-#### Operations
-```zsh
-# Logs
-docker compose -f docker-compose.prod.yml logs -f arena-api arena-ui
+### Voting UI nutzen
 
-# Restart services
+1. Öffne http://localhost:8002/results
+2. Wähle Subset oder "Alle Subsets"
+3. Klick auf eine Frage zum Voten (wenn nicht bereits gevotet)
+4. Wähle: A gewinnt / B gewinnt / Unentschieden / Beide schlecht
+5. Ergebnisse werden live aktualisiert
+6. **CSV Export** für alle Daten verfügbar
+
+## 📂 Projektstruktur
+
+```
+src/openwebui/
+├── arena_api.py                    # Alias für openwebui_api_llm.py
+├── openwebui_api_llm.py           # Main API (LLM + Voting)
+├── voting_system.py               # JSONL Storage Engine
+├── voting_ui_simple.py            # Web Dashboard
+├── arena_voting.py                # CLI Tool (optional)
+├── data/
+│   └── arena_votes.jsonl          # Live Vote Storage
+└── requirements.txt
+
+docker-compose.prod.yml            # Production Stack (4 Services)
+nginx/
+├── nginx.conf.prod                # Reverse Proxy Config
+└── ssl/                           # SSL Certificates
+
+docs/
+├── ENVIRONMENT.md                 # Alle .env Variablen erklärt
+├── SSL_TLS_SETUP.md               # Certificate Management
+└── VM-REQUIREMENTS.md             # Infrastructure Requirements
+
+scripts/
+├── deploy-production.sh           # Deployment Lifecycle
+├── health-check.sh                # Monitoring
+└── arena_seed_*.py                # Daten importieren
+```
+
+## 🔧 Konfiguration
+
+### Minimale .env Variablen
+
+```env
+ENVIRONMENT=LOCAL          # oder PRODUCTION
+DOMAIN_NAME=localhost      # oder deine Domain
+POSTGRES_PASSWORD=dev      # Für Zukunftserweiterungen
+
+# Für LLM-Features (optional)
+AZURE_OPENAI_URL=...       # Azure OpenAI Endpoint
+AZURE_OPENAI_API_KEY=...   # API Key
+QDRANT_URL=...             # Vector DB URL
+QDRANT_API_KEY=...         # API Key
+```
+
+**Alle Variablen:** Siehe [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)
+
+## 📊 API Endpoints
+
+| Method | Endpoint | Beschreibung |
+|--------|----------|-------------|
+| GET | `/health` | Health Check |
+| GET | `/arena/statistics` | Voting Statistiken |
+| GET | `/arena/comparisons` | Alle Comparisons laden |
+| GET | `/arena/comparisons?subset=1` | Nur Subset 1 |
+| POST | `/arena/save-comparison` | Vergleich speichern |
+| POST | `/arena/vote` | Vote abgeben |
+
+## 🐳 Docker
+
+### Starten
+```bash
+ENVIRONMENT=LOCAL docker compose -f docker-compose.prod.yml up -d
+```
+
+### Logs anschauen
+```bash
+docker compose -f docker-compose.prod.yml logs -f arena-api
+docker compose -f docker-compose.prod.yml logs -f arena-ui
+```
+
+### Services neu starten
+```bash
 docker compose -f docker-compose.prod.yml restart arena-api arena-ui
-
-# Stop / remove
-docker compose -f docker-compose.prod.yml down --remove-orphans
-
-# Rebuild after code changes
-docker compose -f docker-compose.prod.yml build
-docker compose -f docker-compose.prod.yml up -d
 ```
 
-#### Scripts (optional helpers)
-- Deploy lifecycle: [scripts/deploy.sh](scripts/deploy.sh)
-    - `./scripts/deploy.sh deploy` builds, restarts, runs health checks.
-- Backups: [scripts/backup.sh](scripts/backup.sh)
-    - Creates dated JSONL backups under `/var/backups/arena` and prunes by retention.
-- Monitoring: [scripts/healthcheck.sh](scripts/healthcheck.sh)
-    - Checks API/UI health, Docker status, disk usage, prints stats.
+### Herunterfahren
+```bash
+docker compose -f docker-compose.prod.yml down
+```
 
-#### Configuration Notes
-- Secrets: Do not commit `.env`. Prefer environment variables or Azure Key Vault.
-- NLTK: Container preloads `punkt_tab` and sets `NLTK_DATA=/tmp/nltk_data` for LlamaIndex.
-- Rate limiting: Enabled for `/arena/*` routes in Nginx. Adjust in [nginx/nginx.conf](nginx/nginx.conf).
-- Fixed questions (Arena/RAGAS): [data/fixed_questions.txt](data/fixed_questions.txt) ist der verbindliche Katalog. Seeder lokal: `python scripts/arena_seed_with_llm.py --input data/fixed_questions.txt --api-url http://127.0.0.1:8001`. Im Container: Datei ins API-Container-Volume kopieren (`docker cp data/fixed_questions.txt fu-arena-api:/app/data/`) und mit `--input /app/data/fixed_questions.txt` seeden.
+## 🚀 Production Deployment
 
-#### Production Follow-ups
-- TLS certificates: Place `fullchain.pem` and `privkey.pem` in `nginx/ssl/` for HTTPS.
-- DNS: Point your domain to the host running the stack; update CORS in `.env`.
-- VM: Install Docker + Compose, copy repo, run `deploy.sh deploy`.
-- Observability: Add alerts (email/Slack), schedule backups via cron.
+1. **Server vorbereiten:** Docker + Docker Compose installieren
+2. **Repo klonen:** `git clone <repo> && cd FU_Chatbot_RD_Zitho`
+3. **.env konfigurieren:** Siehe [DEPLOYMENT.md](DEPLOYMENT.md)
+4. **Deployen:** `./scripts/deploy-production.sh deploy`
 
-## How to build and run Image
-`docker login` <br />
-`docker build -t fatemeh001/kicampus_chatbot:0.0.1 .` <br />
-`docker images` <br />
-`docker run -p 8501 fatemeh001/kicampus_chatbot:0.0.1` <br />
+Oder manuell:
+```bash
+docker compose -f docker-compose.prod.yml build
+docker compose -f docker-compose.prod.yml up -d
+./scripts/health-check.sh
+```
 
-`docker login kicwaacrdev.azurecr.io` <br />
-`docker tag fatemeh001/kicamp_chatbot:0.0.1 kicwaacrdev.azurecr.io/fatemeh001/kicampus_chatbot:0.0.1` <br />
-`docker push kicwaacrdev.azurecr.io/fatemeh001/kicampus_chatbot:0.0.1` <br />
+## 📚 Dokumentation
 
-## To run docker images locally, mount your credentials:
-`docker run -it --rm -p 80:80 -v ~/.azure:/home/appuser/.azure kicwaacrdev.azurecr.io/rest-api:latest`
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Systemarchitektur & Datenflüsse
+- **[VOTING.md](VOTING.md)** - Voting-System Details
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Production Deployment Checkliste
+- **[docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)** - .env Konfiguration
+- **[docs/SSL_TLS_SETUP.md](docs/SSL_TLS_SETUP.md)** - Zertifikat Setup
+- **[docs/VM-REQUIREMENTS.md](docs/VM-REQUIREMENTS.md)** - Infrastructure
 
-### Build and push Docker images locally
-Before pushing the docker image you need to be authenticated docker via `gcloud auth configure-docker europe-west3-docker.pkg.dev`.
+## 🛠️ Entwicklung
 
-If you're working with a mac that is using an arm64 architecture, you specifically need to build a docker image based on an [amd architecture for cloud run](https://stackoverflow.com/questions/66920645/exec-format-error-when-running-containers-build-with-apple-m1-chip-arm-based).
+### Dependencies installieren
+```bash
+python -m pip install -r src/openwebui/requirements.txt
+```
 
-# Arena Voting (UI + Results)
+### API lokal starten
+```bash
+python -m uvicorn src.openwebui.openwebui_api_llm:app --port 8001
+```
 
-Lightweight, local-only Arena mode to compare answers and record votes.
+### Voting UI lokal starten
+```bash
+python -m uvicorn src.openwebui.voting_ui_simple:app --port 8002
+```
+
+## 📊 Datenformat
+
+Votes werden als JSONL (JSON Lines) gespeichert:
+
+```json
+{
+  "id": "uuid",
+  "question": "Beispielfrage",
+  "timestamp": "2026-01-14T13:00:00",
+  "model_a": "kicampus-original",
+  "answer_a": "Antwort A...",
+  "model_b": "kicampus-improved",
+  "answer_b": "Antwort B...",
+  "vote": "A",
+  "vote_timestamp": "2026-01-14T13:05:00",
+  "subset_id": 1,
+  "comment": "optional"
+}
+```
+
+## 🆘 Troubleshooting
+
+**API nicht erreichbar?**
+```bash
+curl http://localhost:8001/health
+docker logs fu-arena-api
+```
+
+**Voting UI zeigt keine Daten?**
+```bash
+curl http://localhost:8001/arena/comparisons
+```
+
+**SSL-Fehler?**
+```bash
+# Dev-Zertifikate regenerieren
+mkdir -p nginx/ssl
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout nginx/ssl/privkey.pem -out nginx/ssl/fullchain.pem \
+  -subj "/C=DE/ST=Berlin/L=Berlin/O=FU/CN=localhost"
+docker restart fu-arena-nginx
+```
+
+## 📋 Status
+
+✅ **Arena System vollständig produktionsreif**
+✅ **Voting-System live mit JSONL-Persistenz**
+✅ **Web-Dashboard mit CSV-Export**
+✅ **Docker Production Stack ready**
+✅ **SSL/TLS automatisiert**
 
 - Code:
     - UI and Results: `src/openwebui/voting_ui_simple.py`
