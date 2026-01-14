@@ -35,7 +35,7 @@ services:
       context: .
       dockerfile: src/openwebui/Dockerfile
     ports:
-      - "8001:8001"
+      - "8011:8001"
     env_file:
       - .env
     depends_on:

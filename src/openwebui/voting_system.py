@@ -121,6 +121,33 @@ class VotingStorage:
         # Weise Subset mit wenigsten Votes zu
         return min(subset_votes, key=subset_votes.get)
     
+    def assign_subsets_to_unassigned(self) -> int:
+        """Weist unzugewiesenen Vergleichen Round-Robin Subsets zu. Returns Anzahl zugewiesener."""
+        comparisons = self.load_all_comparisons()
+        subset_counts = {1: 0, 2: 0, 3: 0, 4: 0}
+        
+        # Zähle bestehende Subsets
+        for c in comparisons:
+            if c.subset_id:
+                subset_counts[c.subset_id] = subset_counts.get(c.subset_id, 0) + 1
+        
+        # Weise unzugewiesenen Vergleichen Subsets zu
+        assigned = 0
+        for c in comparisons:
+            if c.subset_id is None:
+                # Finde Subset mit wenigsten Vergleichen
+                c.subset_id = min(subset_counts, key=subset_counts.get)
+                subset_counts[c.subset_id] += 1
+                assigned += 1
+        
+        # Speichere aktualisierte Comparisons
+        if assigned > 0:
+            with open(self.storage_file, "w", encoding="utf-8") as f:
+                for comp in comparisons:
+                    f.write(comp.model_dump_json() + "\n")
+        
+        return assigned
+    
     def get_statistics(self) -> Dict[str, any]:
         """Berechnet Statistiken über alle Votes."""
         comparisons = self.load_all_comparisons()
@@ -169,5 +196,8 @@ class VotingStorage:
 
 # Global Storage Instance
 default_storage = VotingStorage(
-    storage_file=os.path.join(os.path.dirname(__file__), "data", "arena_votes.jsonl")
+    storage_file=os.getenv(
+        "STORAGE_PATH",
+        os.path.join(os.path.dirname(__file__), "data", "arena_votes.jsonl")
+    )
 )

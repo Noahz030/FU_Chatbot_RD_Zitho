@@ -13,14 +13,14 @@ services:
       PYTHONUNBUFFERED: "1"
       ENVIRONMENT: "LOCAL"  # Set to LOCAL for testing (no API key), PRODUCTION for deployment
       # Arena-specific
-      STORAGE_PATH: /data/arena_votes.jsonl
+      STORAGE_PATH: /app/src/openwebui/data/arena_votes.jsonl
       # Azure Key Vault integration
       USE_KEY_VAULT: "${USE_KEY_VAULT:-true}"
       KEY_VAULT_NAME: "${KEY_VAULT_NAME:-kicwa-keyvault-prod}"
       # CORS Origins from environment
       CORS_ORIGINS: "${CORS_ORIGINS:-*}"
     volumes:
-      - arena_data:/data
+      - ./src/openwebui/data:/app/src/openwebui/data
     ports:
       - "127.0.0.1:8001:8001"  # Only bind to localhost, nginx will proxy
     restart: unless-stopped
@@ -47,8 +47,8 @@ services:
     environment:
       API_BASE_URL: http://arena-api:8001
       PYTHONUNBUFFERED: "1"
-      # Override API base for production (empty = auto-detect)
-      ARENA_API_BASE: ""
+      # Override API base for production (use internal docker network)
+      ARENA_API_BASE: "http://arena-api:8001"
     depends_on:
       arena-api:
         condition: service_healthy

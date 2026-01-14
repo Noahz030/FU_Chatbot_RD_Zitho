@@ -195,3 +195,27 @@ def get_voted(session_id: str = Query(..., description="Client Session-ID")):
 def create_session():
     """Erzeugt eine neue Session-ID (optional – Clients können auch selbst UUIDs erzeugen)."""
     return {"session_id": str(uuid.uuid4())}
+
+
+@app.get("/arena/user-votes")
+def get_user_votes(session_id: Optional[str] = None):
+    """Liefert alle User-Votes mit Session-IDs. Optional filterbar nach session_id."""
+    # Use the same path logic as submit_vote
+    data_dir = Path(__file__).parent / "data"
+    user_votes_file = data_dir / "arena_user_votes.jsonl"
+    
+    votes = []
+    if user_votes_file.exists():
+        with user_votes_file.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                    if session_id is None or obj.get("session_id") == session_id:
+                        votes.append(obj)
+                except Exception:
+                    continue
+    
+    return {"total": len(votes), "votes": votes, "file_path": str(user_votes_file), "exists": user_votes_file.exists()}

@@ -479,6 +479,9 @@ def get_all_comparisons(subset: Optional[int] = None, auth: bool = Depends(verif
     Parameters:
     - subset: Optional subset_id (1-4) zum Filtern der Vergleiche
     """
+    # Auto-Migration: Weise unzugewiesenen Vergleichen Subsets zu
+    default_storage.assign_subsets_to_unassigned()
+    
     if subset is not None:
         comparisons = default_storage.get_comparisons_by_subset(subset)
     else:
@@ -574,6 +577,30 @@ def get_voted(session_id: str = Query(..., description="Client Session-ID"), aut
 def create_session(auth: bool = Depends(verify_arena_key)):
     """Erzeugt eine neue Session-ID (optional – Clients können auch selbst UUIDs erzeugen)."""
     return {"session_id": str(uuid.uuid4())}
+
+
+@app.get("/arena/user-votes")
+def get_user_votes(session_id: Optional[str] = None, auth: bool = Depends(verify_arena_key)):
+    """Liefert alle User-Votes mit Session-IDs. Optional filterbar nach session_id."""
+    # Use the same path logic as submit_vote
+    data_dir = Path(__file__).parent / "data"
+    user_votes_file = data_dir / "arena_user_votes.jsonl"
+    
+    votes = []
+    if user_votes_file.exists():
+        with user_votes_file.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                    if session_id is None or obj.get("session_id") == session_id:
+                        votes.append(obj)
+                except Exception:
+                    continue
+    
+    return {"total": len(votes), "votes": votes}
 
 
 @app.get("/arena/comparison/{comparison_id}")

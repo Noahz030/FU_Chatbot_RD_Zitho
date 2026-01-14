@@ -51,7 +51,7 @@ class ArenaLLMSeeder:
 
         self.output_file.parent.mkdir(parents=True, exist_ok=True)
         self.session = requests.Session()
-        self.models = ["kicampus-original", "kicampus-improved"]
+        self.models = ["kicampus-v1", "kicampus-v1-improved"]
 
     def check_api_health(self) -> bool:
         """Verify API is accessible."""
@@ -140,10 +140,10 @@ class ArenaLLMSeeder:
             "id": str(uuid.uuid4()),
             "question": question,
             "timestamp": datetime.utcnow().isoformat(),
-            "model_a": "kicampus-original",
-            "answer_a": answers.get("kicampus-original", ""),
-            "model_b": "kicampus-improved",
-            "answer_b": answers.get("kicampus-improved", ""),
+            "model_a": "kicampus-v1",
+            "answer_a": answers.get("kicampus-v1", ""),
+            "model_b": "kicampus-v1-improved",
+            "answer_b": answers.get("kicampus-v1-improved", ""),
             "vote": None,
             "vote_timestamp": None,
             "comment": None,

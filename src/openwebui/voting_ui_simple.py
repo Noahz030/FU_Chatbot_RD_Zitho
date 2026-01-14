@@ -33,7 +33,9 @@ else:
 @app.get("/", response_class=HTMLResponse)
 def index():
     """Einfaches Voting UI"""
-    api_override = os.getenv("ARENA_API_BASE", "").rstrip("/")
+    api_base = os.getenv("ARENA_API_BASE", "http://arena-api:8001").rstrip("/")
+    # Convert internal Docker DNS to localhost for browser access
+    api_override = api_base.replace("http://arena-api:", "http://localhost:")
     html = """
 <!DOCTYPE html>
 <html>
@@ -122,13 +124,8 @@ def index():
     </div>
 
     <script>
-        // API base: allow override for direct UI (8002) vs. nginx proxy
-        const API_OVERRIDE = "__API_OVERRIDE__";
-        const API = (API_OVERRIDE && API_OVERRIDE.trim() !== "")
-            ? API_OVERRIDE.replace(/\/$/, '')
-            : (window.location.port === "8002"
-                ? window.location.origin.replace(":8002", ":8001").replace(/\/$/, '')
-                : window.location.origin.replace(/\/$/, ''));
+        // API base: use environment-provided default or fallback to localhost
+        const API = "__API_OVERRIDE__";
         let comparisons = [];
         let currentIndex = 0;
         let selectedVote = null;
@@ -356,10 +353,146 @@ def index():
     return html.replace("__API_OVERRIDE__", api_override)
 
 
+@app.get("/user-votes", response_class=HTMLResponse)
+def user_votes():
+    """User-Votes mit Session-IDs"""
+    api_base = os.getenv("ARENA_API_BASE", "http://arena-api:8001").rstrip("/")
+    api_override = api_base.replace("http://arena-api:", "http://localhost:")
+    html = """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset=\"UTF-8\">
+    <title>User Votes - Arena</title>
+    <style>
+        body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0 auto; max-width: 1400px; padding: 24px; background: #f6f6f6; color: #1f1f1f; }
+        h1 { margin: 0 0 12px; font-weight: 600; }
+        .controls { display: flex; gap: 10px; align-items: center; margin: 12px 0 16px; }
+        input, button { padding: 8px 10px; border: 1px solid #d0d0d0; border-radius: 4px; background: #fff; }
+        table { width: 100%; border-collapse: collapse; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        th, td { padding: 10px 12px; border-bottom: 1px solid #eee; text-align: left; vertical-align: top; }
+        th { background: #fafafa; font-weight: 600; position: sticky; top: 0; }
+        tbody tr:hover { background: #fafafa; }
+        .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; border: 1px solid #ddd; font-size: 12px; }
+        .vote-A { background:#eef6ff; border-color:#cfe3ff; }
+        .vote-B { background:#f4e8ff; border-color:#e3d3ff; }
+        .vote-tie { background:#eef7ee; border-color:#d7ead7; }
+        .vote-both_bad { background:#ffe8e8; border-color:#ffcccc; }
+        .muted { color:#666; font-size:12px; }
+        .nowrap { white-space: nowrap; }
+        .session { font-family: monospace; font-size: 11px; background: #f0f0f0; padding: 2px 6px; border-radius: 3px; }
+    </style>
+    <script>
+        const API_OVERRIDE = "__API_OVERRIDE__";
+        const API = (API_OVERRIDE && API_OVERRIDE.trim() !== "")
+            ? API_OVERRIDE.replace(/\/$/, '')
+            : (window.location.port === "8002"
+                ? window.location.origin.replace(":8002", ":8001").replace(/\/$/, '')
+                : window.location.origin.replace(/\/$/, ''));
+        let allVotes = [];
+        let filtered = [];
+
+        async function load() {
+            const status = document.getElementById('status');
+            const url = `${API}/arena/user-votes`;
+            status.textContent = 'Lade von ' + url;
+            try {
+                const resp = await fetch(url);
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const data = await resp.json();
+                allVotes = data.votes || [];
+                applyFilters();
+                status.textContent = allVotes.length + ' User-Votes geladen';
+            } catch (e) {
+                status.textContent = '❌ Fehler: ' + e.message;
+            }
+        }
+
+        function applyFilters() {
+            const q = (document.getElementById('search').value || '').toLowerCase();
+            filtered = allVotes.filter(v => {
+                const text = ((v.session_id||'') + ' ' + (v.comparison_id||'')).toLowerCase();
+                return !q || text.includes(q);
+            });
+            renderTable();
+        }
+
+        function pill(vote) {
+            if (!vote) return '<span class="pill">-</span>';
+            const cls = vote === 'A' ? 'vote-A' : vote === 'B' ? 'vote-B' : vote === 'tie' ? 'vote-tie' : 'vote-both_bad';
+            const label = vote === 'both_bad' ? 'Beide schlecht' : vote;
+            return `<span class="pill ${cls}">${label}</span>`;
+        }
+
+        function renderTable() {
+            const tbody = document.querySelector('tbody');
+            tbody.innerHTML = filtered.map(v => `
+                <tr>
+                    <td class="nowrap muted">${(v.timestamp||'').replace('T',' ')}</td>
+                    <td><span class="session" title="${v.session_id}">${(v.session_id||'').slice(0,8)}...</span></td>
+                    <td class="muted" style="font-size:11px;" title="${v.comparison_id}">${(v.comparison_id||'').slice(0,12)}...</td>
+                    <td>${pill(v.vote)}</td>
+                    <td class="muted">${v.subset_id || '-'}</td>
+                    <td class="muted">${v.comment || ''}</td>
+                </tr>
+            `).join('');
+            document.getElementById('status').textContent = filtered.length + ' von ' + allVotes.length + ' Votes angezeigt';
+        }
+
+        function exportCSV() {
+            const header = ['timestamp','session_id','comparison_id','vote','subset_id','comment'];
+            const rows = filtered.map(v => header.map(h => {
+                let val = (v[h] || '').toString().split('\\n').join(' ').split('"').join('""');
+                return val;
+            }));
+            const csv = [header.join(','), ...rows.map(r => '"' + r.join('","') + '"')].join('\\n');
+            const blob = new Blob([csv], {type:'text/csv'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'user_votes.csv';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        window.addEventListener('DOMContentLoaded', load);
+    </script>
+</head>
+<body>
+    <h1>User Votes (Session-basiert)</h1>
+    <div class="controls">
+        <span id="status" class="muted">-</span>
+        <input id="search" type="search" placeholder="Suche Session/Comparison-ID" oninput="applyFilters()"/>
+        <button onclick="exportCSV()">CSV Export</button>
+        <a href="/results" style="margin-left:auto;padding:8px 12px;text-decoration:none;background:#fff;border:1px solid #d0d0d0;border-radius:4px;">← Zurück zu Ergebnissen</a>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Timestamp</th>
+                <th>Session-ID</th>
+                <th>Comparison-ID</th>
+                <th>Vote</th>
+                <th>Subset</th>
+                <th>Kommentar</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td colspan="6" class="muted">Lade…</td></tr>
+        </tbody>
+    </table>
+</body>
+</html>
+"""
+    return html.replace("__API_OVERRIDE__", api_override)
+
+
 @app.get("/results", response_class=HTMLResponse)
 def results():
     """Neutrale, read-only Ergebnisliste als Tabelle"""
-    api_override = os.getenv("ARENA_API_BASE", "").rstrip("/")
+    api_base = os.getenv("ARENA_API_BASE", "http://arena-api:8001").rstrip("/")
+    # Convert internal Docker DNS to localhost for browser access
+    api_override = api_base.replace("http://arena-api:", "http://localhost:")
     html = """
 <!DOCTYPE html>
 <html>
@@ -511,6 +644,7 @@ def results():
         </select>
         <input id="search" type="search" placeholder="Suche in Frage/Antworten" oninput="applyFilters()"/>
         <button onclick="exportCSV()">CSV Export</button>
+        <a href="/user-votes" style="margin-left:auto;padding:8px 12px;text-decoration:none;background:#4a90e2;color:white;border-radius:4px;">👥 User-Votes ansehen</a>
     </div>
     <table>
         <thead>
