@@ -40,9 +40,13 @@ Vergleiche zwei Versionen des KI-Campus Chatbots (**original** vs **verbessert**
   - `/arena/statistics` - Zeigt Statistiken
   - `/arena/comparisons` - Alle Vergleiche
   - `/arena/comparison/{id}` - Einzelner Vergleich
+  - `/arena/user-votes` - **NEU:** Per-User Votes mit Session-IDs (für detaillierte Analyse)
+  - `/arena/assign-subset` - Subset-Zuordnung für Benutzer
+  - `/arena/voted` - Bereits gevotet von dieser Session
 
 **Daten:**
 - `src/openwebui/data/arena_votes.jsonl` - Persistent Vote Storage (JSONL Format)
+- `src/openwebui/data/arena_user_votes.jsonl` - **NEU:** Detaillierte Voting-Einträge mit Session-Tracking
 
 ## 🚀 Quick Start
 
@@ -130,7 +134,67 @@ curl -X POST http://localhost:8001/arena/vote \
 curl http://localhost:8001/arena/statistics | jq .
 ```
 
-## 📊 Vote Storage Format
+### **NEU: User-Votes mit Session-IDs abrufen**
+```bash
+# Alle Votes mit Session-Tracking
+curl http://localhost:8001/arena/user-votes | jq .
+
+# Nur Votes einer spezifischen Session
+curl http://localhost:8001/arena/user-votes?session_id=YOUR_SESSION_ID | jq .
+```
+
+**Response Format:**
+```json
+{
+  "total": 23,
+  "votes": [
+    {
+      "comparison_id": "550e8400-e29b-41d4-a716-446655440000",
+      "vote": "B",
+      "comment": null,
+      "subset_id": 1,
+      "session_id": "96356d34-3dbf-48b9-822c-19ed7f8f1481",
+      "timestamp": "2026-01-14T14:47:14.576334"
+    },
+    ...
+  ]
+}
+```
+
+## 📊 Voting Dashboard & Analytics
+
+### 1️⃣ Vergleiche-Dashboard: `/results`
+```
+http://localhost:8002/results
+```
+- Zeigt alle Comparisons mit aggregierten Votes
+- Filter: Alle / Nur gevotet / Nur offen
+- Subset-Filter für fokussierte Analyse
+- **CSV Export** aller Voting-Daten
+- Suche in Fragen & Antworten
+
+### 2️⃣ **NEU: User-Votes Analyse: `/user-votes`**
+```
+http://localhost:8002/user-votes
+```
+- Detaillierte Voting-Records pro Session
+- **Session-ID**: Eindeutige User-Kennung
+- Timestamp: Wann jeder Vote abgegeben wurde
+- Vote-Tracing: Wer hat was und wann gewählt?
+- Subset-Zuordnung pro User sichtbar
+- **CSV Export** für statistische Auswertung
+- Suche nach Session oder Comparison-ID
+
+### Integration in Voting Workflow:
+```
+Voting UI (/results) → "👥 User-Votes ansehen" → Detaillierte Analyse (/user-votes)
+```
+
+Dies ermöglicht:
+- ✅ Vollständige Nachvollziehbarkeit der Abstimmungen
+- ✅ Multi-Session-Tracking für A/B Testing
+- ✅ Deduplication per Session (letzte Vote zählt)
+- ✅ CSV Export für externe Analyse
 
 Datei: `src/openwebui/data/arena_votes.jsonl`
 
@@ -140,13 +204,14 @@ Jede Zeile ist ein JSON Objekt:
   "id": "550e8400-e29b-41d4-a716-446655440000",
   "question": "Was ist Machine Learning?",
   "timestamp": "2025-12-10T12:29:00.000000",
-  "model_a": "kicampus-original",
+  "model_a": "kicampus-v1",
   "answer_a": "...",
-  "model_b": "kicampus-improved",
+  "model_b": "kicampus-v1-improved",
   "answer_b": "...",
   "vote": "B",
   "vote_timestamp": "2025-12-10T12:30:00.000000",
-  "comment": "Bessere Detailverlauf"
+  "comment": "Bessere Detailverlauf",
+  "subset_id": 1
 }
 ```
 
