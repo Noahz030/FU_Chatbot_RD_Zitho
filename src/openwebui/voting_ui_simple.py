@@ -135,6 +135,22 @@ def index():
         let assignedSubset = null;
         let totalInSubset = 0;
         let votedInSubset = 0;
+        let votedSet = new Set();
+        let sessionId = null;
+
+        function ensureSessionId() {
+            let sid = localStorage.getItem('arena_session_id');
+            try {
+                if (!sid && window.crypto && window.crypto.randomUUID) {
+                    sid = window.crypto.randomUUID();
+                }
+            } catch(e) {}
+            if (!sid) {
+                sid = 'sid-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+            }
+            localStorage.setItem('arena_session_id', sid);
+            return sid;
+        }
 
         // Session-Tracking via LocalStorage
         function getAssignedSubset() {
@@ -173,27 +189,33 @@ def index():
             
             // Subset zuweisen falls noch nicht geschehen
             await assignSubsetIfNeeded();
+            sessionId = ensureSessionId();
             
             container.innerHTML = '<div class="loading">⏳ Fetching Subset ' + assignedSubset + ' von ' + API + '...</div>';
             
             try {
-                const resp = await fetch(API + '/arena/comparisons?subset=' + assignedSubset, {
-                    method: 'GET',
-                    headers: {
-                        'Accept': 'application/json'
-                    }
-                });
+                const [cmpResp, votedResp] = await Promise.all([
+                    fetch(API + '/arena/comparisons?subset=' + assignedSubset, {
+                        method: 'GET',
+                        headers: { 'Accept': 'application/json' }
+                    }),
+                    fetch(API + '/arena/voted?session_id=' + encodeURIComponent(sessionId), {
+                        method: 'GET',
+                        headers: { 'Accept': 'application/json' }
+                    })
+                ]);
                 
-                container.innerHTML = '<div class="loading">⏳ Response erhalten, Status: ' + resp.status + '</div>';
+                container.innerHTML = '<div class="loading">⏳ Responses erhalten</div>';
                 
-                if (!resp.ok) {
-                    throw new Error('HTTP ' + resp.status + ' ' + resp.statusText);
-                }
+                if (!cmpResp.ok) throw new Error('HTTP ' + cmpResp.status + ' ' + cmpResp.statusText);
+                if (!votedResp.ok) throw new Error('HTTP ' + votedResp.status + ' ' + votedResp.statusText);
                 
-                const data = await resp.json();
+                const data = await cmpResp.json();
+                const votedData = await votedResp.json();
                 comparisons = data.comparisons || [];
+                votedSet = new Set((votedData.comparison_ids || []).map(String));
                 totalInSubset = comparisons.length;
-                votedInSubset = comparisons.filter(c => c.vote).length;
+                votedInSubset = comparisons.filter(c => votedSet.has(String(c.id))).length;
                 
                 container.innerHTML = '<div class="loading">⏳ ' + comparisons.length + ' Vergleiche in Subset ' + assignedSubset + ' geladen...</div>';
                 
@@ -220,7 +242,7 @@ def index():
                 return;
             }
 
-            const unvoted = comparisons.filter(c => !c.vote);
+            const unvoted = comparisons.filter(c => !votedSet.has(String(c.id)));
 
             if (unvoted.length === 0) {
                 container.innerHTML = `
@@ -259,7 +281,7 @@ def index():
                         <button onclick="selectVote('B')" id="btn-B">B ist besser</button>
                         <button onclick="selectVote('both_bad')" id="btn-both_bad">Beide schlecht</button>
                     </div>
-                    <button class="submit" onclick="submitVote('${comp.id}')">Vote abgeben</button>
+                    <button class="submit" onclick="submitVote('${comp.id}', ${comp.subset_id || 'assignedSubset'})">Vote abgeben</button>
                 </div>
             `;
 
@@ -281,7 +303,7 @@ def index():
             });
         }
 
-        async function submitVote(id) {
+        async function submitVote(id, subsetId) {
             if (!selectedVote) {
                 alert('Bitte wähle eine Option!');
                 return;
@@ -290,17 +312,22 @@ def index():
             try {
                 const resp = await fetch(API + '/arena/vote', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Session-ID': sessionId || ensureSessionId()
+                    },
                     body: JSON.stringify({
                         comparison_id: id,
                         vote: selectedVote,
-                        comment: null
+                        comment: null,
+                        subset_id: subsetId || assignedSubset
                     })
                 });
                 
                 if (resp.ok) {
                     selectedVote = null;
-                    votedInSubset++;
+                    votedSet.add(String(id));
+                    votedInSubset = comparisons.filter(c => votedSet.has(String(c.id))).length;
                     await load();
                 } else {
                     alert('❌ Fehler: ' + resp.statusText);

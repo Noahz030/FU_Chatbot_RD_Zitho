@@ -16,7 +16,6 @@ python = "~3.11"
 # Web framework
 fastapi = "0.109.0"
 uvicorn = {extras = ["standard"], version = "0.27.0"}
-pydantic = "2.5.3"
 # RAG & LLM
 qdrant-client = "1.10.1"
 llama-index = "0.10.68"
@@ -44,8 +43,6 @@ openpyxl = "^3.1.5"
 [tool.poetry.group.api]
 optional = true
 [tool.poetry.group.api.dependencies]
-fastapi = "~0.112.0"
-uvicorn = {extras = ["standard"], version = "~0.24.0.post1"}
 gunicorn = "~22.0.0"
 
 [tool.poetry.group.azfunction]
