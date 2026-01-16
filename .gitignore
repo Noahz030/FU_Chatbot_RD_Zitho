@@ -22,7 +22,10 @@ FailedTranscripts.xlsx
 
 ## Arena runtime data (do not commit)
 src/openwebui/data/*.jsonl
+src/openwebui/data/*.backup*
 src/openwebui/arena_comparisons.json
+data/*.jsonl
+data/*.backup*
 
 # ============================================================================
 # SECURITY: Private Keys & Certificates

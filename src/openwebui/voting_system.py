@@ -6,10 +6,27 @@ Speichert Vergleiche zwischen kicampus-original und kicampus-improved.
 
 import json
 import os
-from datetime import datetime
+import hashlib
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Literal
 from pydantic import BaseModel, Field
+
+
+def get_shuffle_seed(comparison_id: str) -> bool:
+    """
+    Deterministic shuffle based on comparison ID hash.
+    Prevents position bias in blind A/B testing by randomly assigning models to positions.
+    Uses MD5 hash of ID to ensure consistent shuffling across sessions.
+    
+    Args:
+        comparison_id: Unique identifier for the comparison
+        
+    Returns:
+        bool: True if models should be shuffled (swapped), False otherwise
+    """
+    hash_value = hashlib.md5(comparison_id.encode()).hexdigest()
+    return int(hash_value[:8], 16) % 2 == 1
 
 
 class ArenaComparison(BaseModel):
@@ -31,6 +48,43 @@ class ArenaComparison(BaseModel):
     vote_timestamp: Optional[str] = Field(default=None, description="Wann wurde gevotet")
     comment: Optional[str] = Field(default=None, description="Optional: Kommentar zum Vote")
     subset_id: Optional[int] = Field(default=None, description="Subset 1-4 für User-Assignment")
+    
+    def get_shuffled_view(self) -> Dict:
+        """
+        Get the comparison with potentially shuffled positions to prevent position bias.
+        Uses deterministic shuffling based on comparison ID so results are consistent.
+        
+        For blind A/B testing, this ensures:
+        - Users remain blind (no model names shown during voting)
+        - Position bias is prevented (models appear equally in A/B positions across dataset)
+        - Admin analysis is accurate (actual_model_a/b fields track which model was shown where)
+        
+        Returns:
+            dict with actual_model_a, actual_model_b, actual_answer_a, actual_answer_b
+            indicating which model/answer appears in which position for this user
+        """
+        should_shuffle = get_shuffle_seed(self.id)
+        
+        if should_shuffle:
+            # Swap models and answers to show Model B in position A and Model A in position B
+            return {
+                **self.model_dump(),
+                "actual_model_a": self.model_b,
+                "actual_model_b": self.model_a,
+                "actual_answer_a": self.answer_b,
+                "actual_answer_b": self.answer_a,
+                "is_shuffled": True,
+            }
+        else:
+            # No shuffle, positions match original models
+            return {
+                **self.model_dump(),
+                "actual_model_a": self.model_a,
+                "actual_model_b": self.model_b,
+                "actual_answer_a": self.answer_a,
+                "actual_answer_b": self.answer_b,
+                "is_shuffled": False,
+            }
 
 
 class VotingStorage:
@@ -87,7 +141,8 @@ class VotingStorage:
         for comp in comparisons:
             if comp.id == comparison_id:
                 comp.vote = vote
-                comp.vote_timestamp = datetime.utcnow().isoformat()
+                # Use timezone-aware timestamp (Europe/Berlin = UTC+1)
+                comp.vote_timestamp = datetime.now(timezone.utc).astimezone().isoformat()
                 if comment:
                     comp.comment = comment
                 found = True

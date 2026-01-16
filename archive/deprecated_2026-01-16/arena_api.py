@@ -102,7 +102,8 @@ def get_all_comparisons(subset: Optional[int] = None):
         comparisons = default_storage.get_comparisons_by_subset(subset)
     else:
         comparisons = default_storage.load_all_comparisons()
-    return {"total": len(comparisons), "comparisons": [c.model_dump() for c in comparisons]}
+    # Return shuffled views to prevent position bias in blind A/B testing
+    return {"total": len(comparisons), "comparisons": [c.get_shuffled_view() for c in comparisons]}
 
 
 @app.get("/arena/statistics")

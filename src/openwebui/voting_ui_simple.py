@@ -247,6 +247,7 @@ def index():
                         <h2>✅ Alle Fragen in deinem Subset beantwortet!</h2>
                         <p>Du hast ${totalInSubset} von ${totalInSubset} Fragen bewertet.</p>
                         <p>Vielen Dank für deine Teilnahme! 🎉</p>
+                        <button class="submit" onclick="resetSession()" style="margin-top: 20px;">🔄 Erneut bewerten (Session zurücksetzen)</button>
                     </div>
                 `;
                 return;
@@ -288,8 +289,9 @@ def index():
             const bEl = document.getElementById('ansB');
 
             if (qEl) qEl.textContent = comp.question || '';
-            if (aEl) aEl.textContent = comp.answer_a || '';
-            if (bEl) bEl.textContent = comp.answer_b || '';
+            // Use shuffled answers for blind A/B testing
+            if (aEl) aEl.textContent = comp.actual_answer_a || comp.answer_a || '';
+            if (bEl) bEl.textContent = comp.actual_answer_b || comp.answer_b || '';
         }
 
         function selectVote(vote) {
@@ -331,6 +333,15 @@ def index():
                 }
             } catch (e) {
                 alert('❌ Fehler: ' + e.message);
+            }
+        }
+
+        function resetSession() {
+            if (confirm('Möchtest du wirklich von vorne beginnen? Deine bisherigen Votes bleiben gespeichert, aber du bekommst eine neue Session-ID.')) {
+                localStorage.removeItem('arena_session_id');
+                localStorage.removeItem('arena_subset');
+                votedSet.clear();
+                location.reload();
             }
         }
 
@@ -537,6 +548,8 @@ def results():
             currentSubset = subset;
             const url = subset === 'all' ? `${API}/arena/comparisons` : `${API}/arena/comparisons?subset=${subset}`;
             container.textContent = 'Lade von ' + url;
+            console.log('Starting load from:', url);
+            console.log('API base:', API);
             try {
                 console.log('Fetching from:', url);
                 const resp = await fetch(url, {
@@ -545,13 +558,17 @@ def results():
                     mode: 'cors'
                 });
                 console.log('Response status:', resp.status);
+                console.log('Response headers:', [...resp.headers.entries()]);
                 
                 if (!resp.ok) {
-                    throw new Error('HTTP ' + resp.status + ': ' + resp.statusText);
+                    const errorText = await resp.text();
+                    console.error('Response not OK:', resp.status, errorText);
+                    throw new Error('HTTP ' + resp.status + ': ' + resp.statusText + ' - ' + errorText);
                 }
                 
                 const data = await resp.json();
                 console.log('Data received:', data);
+                console.log('Comparisons count:', data.comparisons ? data.comparisons.length : 0);
                 
                 all = data.comparisons || [];
                 console.log('Loaded comparisons:', all.length);
@@ -593,8 +610,14 @@ def results():
                 <tr>
                     <td class="nowrap muted">${(c.timestamp||'').replace('T',' ')}</td>
                     <td class="q">${truncate(c.question, 160)}</td>
-                    <td class="ans">${truncate(c.answer_a, 160)}</td>
-                    <td class="ans">${truncate(c.answer_b, 160)}</td>
+                    <td class="ans">
+                        <strong style="color: #444; font-weight: 600;">${(c.actual_model_a || c.model_a || 'Modell A').substring(0, 30)}</strong><br>
+                        ${truncate(c.actual_answer_a || c.answer_a, 160)}
+                    </td>
+                    <td class="ans">
+                        <strong style="color: #444; font-weight: 600;">${(c.actual_model_b || c.model_b || 'Modell B').substring(0, 30)}</strong><br>
+                        ${truncate(c.actual_answer_b || c.answer_b, 160)}
+                    </td>
                     <td>${pill(c.vote)}</td>
                     <td class="nowrap muted">${c.vote_timestamp ? c.vote_timestamp.replace('T',' ') : ''}</td>
                     <td class="nowrap muted">${c.subset_id || (currentSubset !== 'all' ? currentSubset : '-')}</td>
@@ -606,7 +629,7 @@ def results():
 
 
         function exportCSV() {
-            const header = ['id','timestamp','question','model_a','answer_a','model_b','answer_b','vote','vote_timestamp','subset_id'];
+            const header = ['id','timestamp','question','actual_model_a','actual_answer_a','actual_model_b','actual_answer_b','vote','vote_timestamp','subset_id'];
             const rows = filtered.map(c => header.map(h => {
                 let val = (c[h] || '').toString();
                 val = val.split('\\n').join(' ');
@@ -651,8 +674,8 @@ def results():
             <tr>
                 <th>Erstellt</th>
                 <th>Frage</th>
-                <th>Antwort A</th>
-                <th>Antwort B</th>
+                <th>Antwort A (Modell + Text)</th>
+                <th>Antwort B (Modell + Text)</th>
                 <th>Vote</th>
                 <th>Vote-Zeit</th>
                 <th>Subset</th>

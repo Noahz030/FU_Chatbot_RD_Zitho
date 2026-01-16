@@ -1,0 +1,119 @@
+version: "3.9"
+
+# Arena Integration: Original vs Improved Chatbots
+# Runs both chatbot versions as separate services on different ports
+
+services:
+  # Original Chatbot (kic-web-assistant)
+  chatbot-original:
+    build:
+      context: ../kic-web-assistant-original
+      dockerfile: src/api/Dockerfile
+    container_name: chatbot-original
+    environment:
+      # Disable KeyVault - use ENV vars only (no Azure auth in container)
+      USE_KEY_VAULT: "false"
+      KEY_VAULT_NAME: "kicwa-keyvault-lab"
+      # API Key for inter-service communication (must be JSON list!)
+      REST_API_KEYS: '["arena-test-key"]'
+      # Required OpenAI API credentials from .env
+      AZURE_OPENAI_URL: "${AZURE_OPENAI_URL:-}"
+      AZURE_OPENAI_API_KEY: "${AZURE_OPENAI_API_KEY:-}"
+      AZURE_OPENAI_GPT4_DEPLOYMENT: "${AZURE_OPENAI_GPT4_DEPLOYMENT:-gpt-4}"
+      AZURE_OPENAI_GPT4_MODEL: "${AZURE_OPENAI_GPT4_MODEL:-gpt-4}"
+      AZURE_OPENAI_EMBEDDER_DEPLOYMENT: "${AZURE_OPENAI_EMBEDDER_DEPLOYMENT:-}"
+      AZURE_OPENAI_EMBEDDER_MODEL: "${AZURE_OPENAI_EMBEDDER_MODEL:-}"
+      # Qdrant vector DB
+      PROD_QDRANT_URL: "${PROD_QDRANT_URL:-http://qdrant:6333}"
+      PROD_QDRANT_API_KEY: "${PROD_QDRANT_API_KEY:-}"
+      # Data sources
+      DATA_SOURCE_MOODLE_URL: "${DATA_SOURCE_MOODLE_URL:-}"
+      DATA_SOURCE_MOODLE_TOKEN: "${DATA_SOURCE_MOODLE_TOKEN:-}"
+      # Environment
+      ENVIRONMENT: "STAGING"
+      PYTHONUNBUFFERED: "1"
+    ports:
+      - "9001:80"
+    networks:
+      - arena_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    volumes:
+      - azure-config-original:/home/appuser/.azure
+
+  # Improved Chatbot (FU_Chatbot)
+  chatbot-improved:
+    build:
+      context: ../kic-chatbot-improved
+      dockerfile: src/api/Dockerfile
+    container_name: chatbot-improved
+    environment:
+      # Disable KeyVault - use ENV vars only (no Azure auth in container)
+      USE_KEY_VAULT: "false"
+      KEY_VAULT_NAME: "kicwa-keyvault-lab"
+      # API Key for inter-service communication (must be JSON list!)
+      REST_API_KEYS: '["arena-test-key"]'
+      # Required OpenAI API credentials from .env
+      AZURE_OPENAI_URL: "${AZURE_OPENAI_URL:-}"
+      AZURE_OPENAI_API_KEY: "${AZURE_OPENAI_API_KEY:-}"
+      AZURE_OPENAI_GPT4_DEPLOYMENT: "${AZURE_OPENAI_GPT4_DEPLOYMENT:-gpt-4}"
+      AZURE_OPENAI_GPT4_MODEL: "${AZURE_OPENAI_GPT4_MODEL:-gpt-4}"
+      AZURE_OPENAI_EMBEDDER_DEPLOYMENT: "${AZURE_OPENAI_EMBEDDER_DEPLOYMENT:-}"
+      AZURE_OPENAI_EMBEDDER_MODEL: "${AZURE_OPENAI_EMBEDDER_MODEL:-}"
+      # Qdrant vector DB
+      PROD_QDRANT_URL: "${PROD_QDRANT_URL:-http://qdrant:6333}"
+      PROD_QDRANT_API_KEY: "${PROD_QDRANT_API_KEY:-}"
+      # Data sources
+      DATA_SOURCE_MOODLE_URL: "${DATA_SOURCE_MOODLE_URL:-}"
+      DATA_SOURCE_MOODLE_TOKEN: "${DATA_SOURCE_MOODLE_TOKEN:-}"
+      # Environment
+      ENVIRONMENT: "STAGING"
+      PYTHONUNBUFFERED: "1"
+    ports:
+      - "9002:80"
+    networks:
+      - arena_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    volumes:
+      - azure-config-improved:/home/appuser/.azure
+
+  # PostgreSQL for Langfuse (shared)
+  postgres-chatbots:
+    image: postgres:16-alpine
+    container_name: postgres-chatbots
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: "trust"
+      POSTGRES_USER: 'postgres'
+      POSTGRES_PASSWORD: 'postgres'
+      POSTGRES_DB: 'postgres'
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-chatbots-data:/var/lib/postgresql/data
+    networks:
+      - arena_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  arena_network:
+    external: true
+    name: fu_chatbot_rd_zitho_arena_network
+
+volumes:
+  azure-config-original:
+  azure-config-improved:
+  postgres-chatbots-data:

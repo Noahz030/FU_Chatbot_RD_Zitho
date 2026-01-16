@@ -1,0 +1,46 @@
+# Local Testing Configuration for External Chatbots
+# Use this for local development with chatbots running on localhost
+
+models:
+  # Original KI-Campus Assistant (localhost:9001)
+  kicampus-v1:
+    name: "KI-Campus (Original)"
+    description: "Original chatbot from scieneers/kic-web-assistant repository"
+    enabled: true
+    params:
+      context_window: 10
+      model_enum: "gpt4"
+      # Use localhost for local testing
+      api_base_url: "http://localhost:9001"
+      api_key: "arena-test-key"
+      timeout: 60
+    source: "src.llm.http_proxy_assistant:HTTPProxyAssistant"
+    release_date: "2024-01-01"
+    tags:
+      - "original"
+      - "baseline"
+      - "external"
+
+  # Improved KI-Campus Assistant (localhost:9002)
+  kicampus-v1-improved:
+    name: "KI-Campus (Improved)"
+    description: "Enhanced chatbot from KI-Campus/FU_Chatbot repository"
+    enabled: true
+    params:
+      context_window: 15
+      model_enum: "gpt4"
+      # Use localhost for local testing
+      api_base_url: "http://localhost:9002"
+      api_key: "arena-test-key"
+      timeout: 60
+    source: "src.llm.http_proxy_assistant:HTTPProxyAssistant"
+    release_date: "2025-06-01"
+    tags:
+      - "improved"
+      - "extended-context"
+      - "external"
+
+arena:
+  enabled_models:
+    - "kicampus-v1"
+    - "kicampus-v1-improved"

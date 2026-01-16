@@ -255,27 +255,58 @@ Open in browser:
 - If results show "Lade…" endlessly: verify API is up and `GET /arena/comparisons` returns data.
 - If Safari reports JS syntax errors, ensure you’re on branch `feature/openwebui-arena` (contains fixes for newline/quote escaping and missing elements).
 
-## Seeding comparisons
+## 🌱 Seeding Comparisons
 
-You can seed via the API (`POST /arena/save-comparison`) or the helper script `scripts/arena_seed.py` which appends unvoted items directly to the JSONL. Unvoted rows appear in the voting UI automatically.
+You can seed via the API (`POST /arena/save-comparison`) or the helper scripts in `scripts/`.
 
-Examples:
+### ⚠️ CRITICAL: Storage Path
 
-```zsh
+**The Arena loads comparisons from `src/openwebui/data/arena_votes.jsonl`**
+
+Seeding scripts automatically write to the correct location. Make sure to:
+- Use `scripts/arena_seed_external.py` for external chatbot APIs
+- The script will write to `src/openwebui/data/arena_votes.jsonl` (NOT `data/arena_votes.jsonl`)
+- Verify seeded data appears in http://localhost:8002 after running
+
+### Seeding External Chatbots (via API)
+
+For comparing two external chatbot versions:
+
+```bash
+# Seed with fixed questions (one per line in UTF-8 text file)
+python scripts/arena_seed_external.py
+
+# The script will:
+# 1. Load questions from data/fixed_questions.txt
+# 2. Call both chatbots via Arena API (/v1/chat/completions)
+# 3. Write comparisons to src/openwebui/data/arena_votes.jsonl
+# 4. Make them immediately visible in the voting UI
+```
+
+**Setup required:**
+- Create `data/fixed_questions.txt` with one question per line
+- Both external chatbots must be running
+- Arena API must be accessible at `http://localhost:8001`
+
+### Legacy: Direct JSONL Seeding
+
+For pre-existing answer pairs:
+
+```bash
 # From a newline-separated questions file
 python scripts/arena_seed.py --questions path/to/questions.txt
 
-# From a JSON array (objects require: question, answer_a, answer_b; optional: model_a, model_b)
+# From a JSON array
 python scripts/arena_seed.py --json path/to/items.json
 
-# Custom storage file and placeholders
+# Custom models and answer templates
 python scripts/arena_seed.py \
     --questions questions.txt \
-    --model-a "kicampus-original" --model-b "kicampus-improved" \
-    --answer-a "Antwort A für: {q}" --answer-b "Antwort B für: {q}" \
+    --model-a "kicampus-original" \
+    --model-b "kicampus-improved" \
     --storage-file src/openwebui/data/arena_votes.jsonl
 
-# Dry-run to preview
+# Preview without saving
 python scripts/arena_seed.py --questions questions.txt --dry-run
 ```
 

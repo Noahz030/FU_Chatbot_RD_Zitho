@@ -40,6 +40,7 @@ if allowed_origins == ["*"]:
         allow_origins=["*"],
         allow_methods=["*"],
         allow_headers=["*"],
+        allow_credentials=False,  # Cannot use credentials with wildcard origin
     )
 else:
     # Production: Restrict to specific domains
@@ -487,9 +488,10 @@ def get_all_comparisons(subset: Optional[int] = None, auth: bool = Depends(verif
     else:
         comparisons = default_storage.load_all_comparisons()
     
+    # Return shuffled views to prevent position bias in blind A/B testing
     return {
         "total": len(comparisons),
-        "comparisons": [c.model_dump() for c in comparisons],
+        "comparisons": [c.get_shuffled_view() for c in comparisons],
         "subset": subset
     }
 
