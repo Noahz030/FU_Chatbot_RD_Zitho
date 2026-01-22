@@ -23,7 +23,7 @@ class HTTPProxyAssistant:
     The external API must implement the /api/chat endpoint compatible with KICampusAssistant.
     """
     
-    def __init__(self, api_base_url: str, api_key: str = "arena-test-key", timeout: int = 60, **kwargs):
+    def __init__(self, api_base_url: str, api_key: str = "arena-test-key", timeout: int = 60, use_thread_api: bool = False, **kwargs):
         """
         Initialize HTTP proxy assistant
         
@@ -31,15 +31,17 @@ class HTTPProxyAssistant:
             api_base_url: Base URL of the external chatbot API (e.g., http://localhost:9001)
             api_key: API key for authentication
             timeout: Request timeout in seconds
+            use_thread_api: If True, uses thread-based API (user_query + thread_id) instead of messages list
             **kwargs: Additional parameters (e.g., context_window) ignored by proxy
         """
         self.api_base_url = api_base_url.rstrip("/")
         self.api_key = api_key
         self.timeout = timeout
+        self.use_thread_api = use_thread_api
         self.session = requests.Session()
         self.session.headers.update({"Api-Key": api_key})
         
-        logger.info(f"HTTPProxyAssistant initialized for {api_base_url}")
+        logger.info(f"HTTPProxyAssistant initialized for {api_base_url} (thread_api={use_thread_api})")
     
     def _convert_chat_history(self, chat_history: list[ChatMessage]) -> list[dict]:
         """Convert LlamaIndex ChatMessage to API format"""
@@ -68,13 +70,25 @@ class HTTPProxyAssistant:
         """
         chat_history = chat_history or []
         
-        # Build request payload matching KICampusAssistant API format
-        payload = {
-            "messages": self._convert_chat_history(chat_history) + [
-                {"role": "user", "content": query}
-            ],
-            "model": model.value if hasattr(model, 'value') else str(model),
-        }
+        # Build request payload based on API version
+        if self.use_thread_api:
+            # Improved chatbot: thread-based API (user_query + thread_id)
+            payload = {
+                "user_query": {
+                    "role": "user",
+                    "content": query
+                },
+                "thread_id": None,  # Stateless for Arena
+                "model": model.value if hasattr(model, 'value') else str(model),
+            }
+        else:
+            # Original chatbot: stateless messages list
+            payload = {
+                "messages": self._convert_chat_history(chat_history) + [
+                    {"role": "user", "content": query}
+                ],
+                "model": model.value if hasattr(model, 'value') else str(model),
+            }
         
         try:
             logger.debug(f"Calling {self.api_base_url}/api/chat")

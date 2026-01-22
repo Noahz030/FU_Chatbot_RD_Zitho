@@ -134,6 +134,9 @@ def index():
         let votedInSubset = 0;
         let votedSet = new Set();
         let sessionId = null;
+        let prefetchQueue = [];  // Queue of pre-generated comparisons (up to 5)
+        let isPrefetching = false;  // Flag to prevent concurrent prefetching
+        const MAX_PREFETCH = 5;  // Number of questions to prefetch
 
         function ensureSessionId() {
             let sid = localStorage.getItem('arena_session_id');
@@ -188,46 +191,256 @@ def index():
             await assignSubsetIfNeeded();
             sessionId = ensureSessionId();
             
-            container.innerHTML = '<div class="loading">⏳ Fetching Subset ' + assignedSubset + ' von ' + API + '...</div>';
+            // ON-DEMAND MODE: Immer neue Antworten generieren für maximale Varianz
+            // (anstatt vorhandene Comparisons zu laden)
+            container.innerHTML = '<div class="loading">⏳ Generiere neue Antworten für Session ' + sessionId.substring(0, 8) + '...</div>';
             
             try {
-                const [cmpResp, votedResp] = await Promise.all([
-                    fetch(API + '/arena/comparisons?subset=' + assignedSubset, {
-                        method: 'GET',
-                        headers: { 'Accept': 'application/json' }
-                    }),
-                    fetch(API + '/arena/voted?session_id=' + encodeURIComponent(sessionId), {
-                        method: 'GET',
-                        headers: { 'Accept': 'application/json' }
-                    })
-                ]);
+                // Hole voted IDs für diese Session
+                const votedResp = await fetch(API + '/arena/voted?session_id=' + encodeURIComponent(sessionId), {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' }
+                });
                 
-                container.innerHTML = '<div class="loading">⏳ Responses erhalten</div>';
-                
-                if (!cmpResp.ok) throw new Error('HTTP ' + cmpResp.status + ' ' + cmpResp.statusText);
                 if (!votedResp.ok) throw new Error('HTTP ' + votedResp.status + ' ' + votedResp.statusText);
                 
-                const data = await cmpResp.json();
                 const votedData = await votedResp.json();
-                comparisons = data.comparisons || [];
                 votedSet = new Set((votedData.comparison_ids || []).map(String));
-                totalInSubset = comparisons.length;
-                votedInSubset = comparisons.filter(c => votedSet.has(String(c.id))).length;
                 
-                container.innerHTML = '<div class="loading">⏳ ' + comparisons.length + ' Vergleiche in Subset ' + assignedSubset + ' geladen...</div>';
+                // Initialize comparisons array (wird durch on-demand gefüllt)
+                comparisons = [];
+                totalInSubset = 0;
+                votedInSubset = votedSet.size;  // Anzahl der bereits gevoteten in dieser Session
                 
-                if (comparisons.length === 0) {
-                    container.innerHTML = '<div class="error">⚠️ Keine Vergleiche in diesem Subset</div>';
-                    return;
-                }
+                // Generiere erste Comparison on-demand
+                await generateOnDemandComparison();
                 
-                render();
+                // Start prefetching 5 questions immediately in background
+                fillPrefetchQueue();
+                
             } catch (e) {
                 container.innerHTML = 
                     '<div class="error">❌ Fehler beim Laden<br>' + 
-                    'API: ' + API + '/arena/comparisons?subset=' + assignedSubset + '<br>' +
                     'Error: ' + e.message + '<br>' +
                     'Stack: ' + (e.stack || 'no stack') + '</div>';
+            }
+        }
+
+        async function fillPrefetchQueue() {
+            // Prevent concurrent prefetching
+            if (isPrefetching) {
+                console.log('Already prefetching, skipping...');
+                return;
+            }
+            
+            // Don't prefetch if we've completed the subset
+            if (votedInSubset >= totalInSubset) {
+                console.log('Subset completed, no prefetch needed');
+                return;
+            }
+            
+            // Calculate how many we need to prefetch
+            const remaining = Math.max(0, totalInSubset - votedInSubset);
+            const targetSize = Math.min(MAX_PREFETCH, remaining);
+            const needed = targetSize - prefetchQueue.length;
+            
+            if (needed <= 0) {
+                console.log('Prefetch queue full (' + prefetchQueue.length + '/' + targetSize + ')');
+                return;
+            }
+            
+            isPrefetching = true;
+            console.log('🔄 Prefetching ' + needed + ' comparisons (queue: ' + prefetchQueue.length + ' → ' + targetSize + ')...');
+            
+            try {
+                if (!assignedSubset || assignedSubset === null) {
+                    console.warn('No subset assigned for prefetch');
+                    isPrefetching = false;
+                    return;
+                }
+                
+                const subsetResp = await fetch(API + '/arena/questions-for-subset/' + assignedSubset, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' }
+                });
+                
+                if (!subsetResp.ok) {
+                    throw new Error('Failed to fetch subset questions for prefetch');
+                }
+                
+                const subsetData = await subsetResp.json();
+                const subsetQuestions = subsetData.questions;
+                
+                // Generate multiple comparisons in parallel
+                const promises = [];
+                for (let i = 0; i < needed; i++) {
+                    const question = subsetQuestions[Math.floor(Math.random() * subsetQuestions.length)];
+                    
+                    const promise = fetch(API + '/arena/generate', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            question: question,
+                            session_id: sessionId,
+                            subset_id: assignedSubset,
+                            user_id: null
+                        })
+                    })
+                    .then(resp => {
+                        if (!resp.ok) throw new Error('Prefetch failed: ' + resp.status);
+                        return resp.json();
+                    })
+                    .then(comparison => {
+                        prefetchQueue.push(comparison);
+                        console.log('✅ Prefetched [' + prefetchQueue.length + '/' + targetSize + ']:', comparison.question.substring(0, 50) + '...');
+                        return comparison;
+                    })
+                    .catch(e => {
+                        console.error('Single prefetch failed:', e);
+                        return null;
+                    });
+                    
+                    promises.push(promise);
+                }
+                
+                await Promise.all(promises);
+                console.log('✅ Prefetch batch complete. Queue size: ' + prefetchQueue.length);
+                
+            } catch (e) {
+                console.error('Prefetch error (non-critical):', e);
+            } finally {
+                isPrefetching = false;
+            }
+        }
+
+        async function generateOnDemandComparison() {
+            const container = document.getElementById('container');
+            
+            // Debug: Log current state
+            console.log('generateOnDemandComparison called:', {
+                assignedSubset,
+                sessionId,
+                votedInSubset,
+                totalInSubset,
+                queueSize: prefetchQueue.length
+            });
+            
+            // Check if we have a prefetched comparison ready in queue
+            if (prefetchQueue.length > 0) {
+                const comparison = prefetchQueue.shift();  // Take first from queue
+                
+                // Skip if already voted (shouldn't happen but safety check)
+                if (votedSet.has(String(comparison.id))) {
+                    console.warn('Skipping already-voted comparison from queue');
+                    return generateOnDemandComparison();  // Try next one
+                }
+                
+                console.log('⚡ Using prefetched comparison [' + prefetchQueue.length + ' remaining] (instant!)');
+                
+                // Add to local pool
+                comparisons = [comparison];
+                render();
+                
+                // Refill the queue in background
+                fillPrefetchQueue();
+                return;
+            }
+            
+            // No prefetch available, generate now (with loading indicator)
+            try {
+                // Guard: Check if subset is assigned
+                if (!assignedSubset || assignedSubset === null) {
+                    throw new Error('No subset assigned. Getting subset first...');
+                }
+                
+                const subsetResp = await fetch(API + '/arena/questions-for-subset/' + assignedSubset, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' }
+                });
+                
+                if (!subsetResp.ok) {
+                    throw new Error('HTTP ' + subsetResp.status + ' - Failed to fetch subset questions');
+                }
+                
+                const subsetData = await subsetResp.json();
+                const subsetQuestions = subsetData.questions;
+                totalInSubset = subsetData.total_questions;  // Set total questions in subset
+                
+                console.log('Fetched subset questions:', {
+                    subset: assignedSubset,
+                    count: subsetQuestions.length,
+                    questions: subsetQuestions
+                });
+                
+                // Check if all questions answered in subset (simple check based on vote count)
+                if (votedInSubset >= totalInSubset) {
+                    container.innerHTML = `
+                        <div class="completion" style="background: white; padding: 40px; border-radius: 8px; text-align: center;">
+                            <h2 style="font-size: 32px; margin: 0 0 15px;">✅ Subset abgeschlossen!</h2>
+                            <p style="font-size: 16px; color: #666; margin: 0 0 20px;">
+                                Du hast alle ${totalInSubset} Fragen in Subset ${assignedSubset} bewertet.
+                            </p>
+                            <p style="font-size: 14px; color: #999; margin: 0 0 30px;">
+                                Danke für deine Teilnahme an der Arena-Evaluierung!
+                            </p>
+                            <button class="submit" onclick="resetSession()" style="margin-top: 10px;">🔄 Neue Session starten</button>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                // Pick a random question from subset
+                const question = subsetQuestions[Math.floor(Math.random() * subsetQuestions.length)];
+                
+                console.log('Selected question:', question);
+                
+                container.innerHTML = '<div class="loading">⏳ Generiere Antworten für: "' + question + '"...</div>';
+                
+                // Call generate endpoint with subset validation
+                const resp = await fetch(API + '/arena/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        question: question,
+                        session_id: sessionId,
+                        subset_id: assignedSubset,
+                        user_id: null
+                    })
+                });
+                
+                console.log('Generate response:', resp.status);
+                
+                if (!resp.ok) {
+                    const errData = await resp.json().catch(() => ({}));
+                    console.error('Generate error response:', errData);
+                    throw new Error('HTTP ' + resp.status + ' - ' + (errData.detail || resp.statusText));
+                }
+                
+                const comparison = await resp.json();
+                
+                // Add to local pool if not already voted
+                if (!votedSet.has(String(comparison.id))) {
+                    comparisons = [comparison];
+                }
+                
+                console.log('On-demand comparison generated:', comparison);
+                render();
+                
+                // Refill the prefetch queue in background
+                fillPrefetchQueue();
+            } catch (e) {
+                console.error('generateOnDemandComparison error:', e);
+                container.innerHTML = 
+                    '<div class="error">❌ Fehler beim Generieren<br>' + 
+                    'Error: ' + e.message + '<br>' +
+                    '<small>Details im Browser-Konsole (F12)</small></div>';
+                console.error('Generate error:', e);
             }
         }
 
@@ -244,10 +457,11 @@ def index():
             if (unvoted.length === 0) {
                 container.innerHTML = `
                     <div class="loading">
-                        <h2>✅ Alle Fragen in deinem Subset beantwortet!</h2>
-                        <p>Du hast ${totalInSubset} von ${totalInSubset} Fragen bewertet.</p>
-                        <p>Vielen Dank für deine Teilnahme! 🎉</p>
-                        <button class="submit" onclick="resetSession()" style="margin-top: 20px;">🔄 Erneut bewerten (Session zurücksetzen)</button>
+                        <h2>✅ Aktuelle Frage beantwortet!</h2>
+                        <p>Du hast ${votedInSubset} Fragen bewertet.</p>
+                        <p>Klicke auf "Weiter" um die nächste Frage zu generieren.</p>
+                        <button class="submit" onclick="generateOnDemandComparison()" style="margin-top: 20px;">➡️ Nächste Frage</button>
+                        <button class="submit" onclick="resetSession()" style="margin-top: 10px;">🔄 Neue Session starten</button>
                     </div>
                 `;
                 return;
@@ -256,8 +470,11 @@ def index():
             const comp = unvoted[0];
             selectedVote = null;
             
-            // Progress-Indicator
-            const progress = `Frage ${votedInSubset + 1} von ${totalInSubset} (Subset ${assignedSubset})`;
+            // Progress-Indicator mit verbleibenden Fragen
+            const totalShown = totalInSubset > 0 ? totalInSubset : 15;  // Default 15 wenn nicht gesetzt
+            const remaining = Math.max(0, totalShown - votedInSubset);
+            const currentQuestion = Math.min(votedInSubset + 1, totalShown);
+            const progress = `Frage ${currentQuestion} von ${totalShown} (noch ${remaining} übrig) - Subset ${assignedSubset}`;
 
             container.innerHTML = `
                 <div class="comparison">
@@ -326,8 +543,10 @@ def index():
                 if (resp.ok) {
                     selectedVote = null;
                     votedSet.add(String(id));
-                    votedInSubset = comparisons.filter(c => votedSet.has(String(c.id))).length;
-                    await load();
+                    votedInSubset++;
+                    
+                    // On-demand mode: Generiere nächste Frage statt zu laden
+                    await generateOnDemandComparison();
                 } else {
                     alert('❌ Fehler: ' + resp.statusText);
                 }

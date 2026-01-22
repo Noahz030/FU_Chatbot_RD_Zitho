@@ -48,6 +48,9 @@ class ArenaComparison(BaseModel):
     vote_timestamp: Optional[str] = Field(default=None, description="Wann wurde gevotet")
     comment: Optional[str] = Field(default=None, description="Optional: Kommentar zum Vote")
     subset_id: Optional[int] = Field(default=None, description="Subset 1-4 für User-Assignment")
+    session_id: Optional[str] = Field(default=None, description="Session ID für on-demand generation tracking")
+    user_id: Optional[str] = Field(default=None, description="User ID für on-demand generation tracking")
+    is_generated_on_demand: bool = Field(default=False, description="True wenn die Antworten on-demand generiert wurden")
     
     def get_shuffled_view(self) -> Dict:
         """
@@ -162,6 +165,15 @@ class VotingStorage:
         """Filtert Vergleiche nach Subset-ID."""
         all_comparisons = self.load_all_comparisons()
         return [c for c in all_comparisons if c.subset_id == subset_id]
+    
+    def get_comparisons_by_session(self, session_id: str) -> List[ArenaComparison]:
+        """Filtert Vergleiche nach Session-ID (für on-demand-generierte Comparisons)."""
+        all_comparisons = self.load_all_comparisons()
+        return [c for c in all_comparisons if c.session_id == session_id]
+    
+    def add_comparison(self, comparison: ArenaComparison) -> None:
+        """Alias für save_comparison (für Konsistenz)."""
+        self.save_comparison(comparison)
     
     def assign_subset_round_robin(self) -> int:
         """Weist ein Subset zu basierend auf Vote-Counts (Round-Robin für faire Verteilung)."""

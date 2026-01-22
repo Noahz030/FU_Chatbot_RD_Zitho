@@ -37,6 +37,7 @@ models:
       api_base_url: "http://chatbot-improved"  # Docker service name (or localhost:9002 for local testing)
       api_key: "arena-test-key"
       timeout: 60
+      use_thread_api: true  # Improved chatbot uses thread-based API (user_query + thread_id)
     source: "src.llm.http_proxy_assistant:HTTPProxyAssistant"
     release_date: "2025-06-01"
     tags:

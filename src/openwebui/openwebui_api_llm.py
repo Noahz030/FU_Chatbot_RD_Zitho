@@ -24,6 +24,13 @@ from src.llm.model_registry import get_registry
 # Wichtige Imports für LLM-Assistenten werden lazy innerhalb der Funktionen geladen,
 # damit Arena-Endpunkte ohne vollständige LLM/Monitoring-Dependencies funktionieren.
 from src.openwebui.voting_system import default_storage, ArenaComparison
+from src.openwebui.arena_questions import (
+    get_all_questions, 
+    get_questions_by_category, 
+    get_questions_by_type,
+    get_questions_for_subset,
+    get_subset_size,
+)
 
 app = FastAPI(
     title="KI-Campus Chatbot Arena API",
@@ -386,6 +393,69 @@ def health():
 # Arena Voting Endpoints
 # ============================================================================
 
+@app.get("/arena/questions")
+def get_arena_questions(category: Optional[str] = Query(None), question_type: Optional[str] = Query(None)):
+    """
+    Gibt die verfügbaren Evaluationsfragen zurück.
+    
+    Args:
+        category: Optional Kategorie-Filter (z.B. 'wissen_allgemein', 'noise_out_of_scope')
+        question_type: Optional Typ-Filter (z.B. 'single_hop_rag', 'multi_hop_rag', 'robustness_test')
+    
+    Returns:
+        Liste von Fragen oder gefiltert nach Kategorie/Typ
+    """
+    try:
+        if question_type:
+            questions = get_questions_by_type(question_type)
+        elif category:
+            questions = get_questions_by_category(category)
+        else:
+            questions = get_all_questions()
+        
+        return {
+            "success": True,
+            "count": len(questions),
+            "questions": questions
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving questions: {str(e)}")
+
+
+@app.get("/arena/questions-for-subset/{subset_id}")
+def get_questions_for_subset_endpoint(subset_id: int):
+    """
+    Gibt die Fragen für eine spezifische Subset zurück.
+    
+    Args:
+        subset_id: Subset-ID (1-4)
+    
+    Returns:
+        Liste von Fragen für die Subset mit Metadaten
+        
+    Raises:
+        400: Wenn subset_id nicht 1-4 ist
+    """
+    try:
+        if subset_id < 1 or subset_id > 4:
+            raise ValueError("subset_id must be between 1 and 4")
+        
+        questions = get_questions_for_subset(subset_id)
+        subset_size = get_subset_size(subset_id)
+        
+        return {
+            "success": True,
+            "subset_id": subset_id,
+            "total_questions": subset_size,
+            "questions": questions
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving subset questions: {str(e)}")
+
+
+
 class SaveComparisonRequest(BaseModel):
     """Request body für das Speichern eines Arena-Vergleichs."""
     question: str
@@ -401,6 +471,124 @@ class VoteRequest(BaseModel):
     vote: Literal["A", "B", "tie", "both_bad"]
     comment: Optional[str] = None
     subset_id: Optional[int] = None
+
+
+class GenerateComparisonRequest(BaseModel):
+    """Request to generate answers on-demand for a question."""
+    question: str = Field(description="Die zu stellende Frage")
+    session_id: Optional[str] = Field(default=None, description="Optional Session ID for tracking")
+    user_id: Optional[str] = Field(default=None, description="Optional User ID for tracking")
+    subset_id: Optional[int] = Field(default=None, description="Optional subset assignment")
+
+
+@app.post("/arena/generate")
+async def generate_comparison(
+    request: GenerateComparisonRequest,
+    auth: bool = Depends(verify_arena_key),
+):
+    """
+    Generiert on-demand Antworten von beiden Modellen für eine Frage.
+    Speichert die Comparison in der globalen JSONL und gibt sie zurück.
+    
+    WICHTIG: Validiert, dass die Frage zur zugeordneten Subset des Users gehört.
+    
+    Dies ermöglicht pro-User Generierung mit Varianz in den Antworten,
+    statt vorab fest geseete Vergleiche zu nutzen.
+    
+    Args:
+        request: GenerateComparisonRequest mit question, session_id, user_id und subset_id
+        auth: API-Key Verification
+        
+    Returns:
+        ArenaComparison mit answers_a und answer_b von beiden Modellen
+        
+    Raises:
+        400: Wenn question nicht zur subset_id gehört
+        503: Wenn ein Modell nicht verfügbar ist
+    """
+    try:
+        # Validate that question belongs to the user's subset
+        if request.subset_id is not None:
+            valid_questions = get_questions_for_subset(request.subset_id)
+            if request.question not in valid_questions:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Question validation failed: '{request.question}' not in subset {request.subset_id}")
+                logger.error(f"Valid questions for subset {request.subset_id}: {valid_questions}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Question '{request.question}' does not belong to subset {request.subset_id}"
+                )
+        
+        # Get both assistants
+        assistant_a = await get_assistant("kicampus-v1")
+        assistant_b = await get_assistant("kicampus-v1-improved")
+        
+        if not assistant_a or not assistant_b:
+            raise HTTPException(
+                status_code=503,
+                detail="One or both model endpoints are unavailable"
+            )
+        
+        # Call both models in parallel
+        loop = asyncio.get_event_loop()
+        answer_a_task = loop.run_in_executor(None, lambda: call_assistant(assistant_a, request.question))
+        answer_b_task = loop.run_in_executor(None, lambda: call_assistant(assistant_b, request.question))
+        
+        answer_a = await answer_a_task
+        answer_b = await answer_b_task
+        
+        # Create comparison
+        comparison = ArenaComparison(
+            id=str(uuid.uuid4()),
+            question=request.question,
+            timestamp=datetime.utcnow().isoformat(),
+            model_a="kicampus-v1",
+            answer_a=answer_a,
+            model_b="kicampus-v1-improved",
+            answer_b=answer_b,
+            session_id=request.session_id,
+            user_id=request.user_id,
+            subset_id=request.subset_id,
+            is_generated_on_demand=True,
+        )
+        
+        # Save to global JSONL
+        default_storage.save_comparison(comparison)
+        
+        # Return shuffled view for blind testing
+        return comparison.get_shuffled_view()
+        
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="One or both models timed out")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating comparison: {str(e)}")
+
+
+def call_assistant(assistant: Any, question: str) -> str:
+    """
+    Call assistant synchronously and return answer text.
+    This wrapper allows async/await handling of sync assistant calls.
+    """
+    try:
+        # HTTPProxyAssistant needs (query, model, chat_history)
+        # Use GPT4 as default model
+        from src.llm.LLMs import Models
+        response = assistant.chat(question, Models.GPT4, chat_history=[])
+        
+        if isinstance(response, str):
+            return response
+        elif hasattr(response, 'content'):
+            return response.content
+        elif hasattr(response, 'response'):
+            return response.response
+        else:
+            return str(response)
+    except Exception as e:
+        # Return error message marked clearly
+        return f"[Error: {type(e).__name__}: {str(e)}]"
 
 
 @app.post("/arena/save-comparison")

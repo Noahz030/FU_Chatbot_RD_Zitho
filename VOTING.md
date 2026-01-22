@@ -1,10 +1,20 @@
 # 🏆 Arena Voting System - Dokumentation
 
-Leichtes, produktionsreifes Voting-System mit Web-Dashboard für paarweise Modellvergleiche.
+Leichtes, produktionsreifes Voting-System mit On-Demand-Generierung, 4-Subset System und Prefetching für paarweise Modellvergleiche.
 
 ## 🎯 Ziel
 
-Sammle Votes zum Vergleich zweier KI-generierter Antworten. Jedes Vergleichspaar wird mit einer Bewertung versehen und alle Daten persistent als JSONL gespeichert.
+Sammle Votes zum Vergleich zweier KI-generierter Antworten. Jede Frage generiert **fresh answers on-demand** pro User-Session. Alle Daten werden persistent als JSONL gespeichert.
+
+## ✨ Key Features (Januar 2026)
+
+- **4-Subset System**: 59 Fragen aufgeteilt in 4 Subsets à ~15 Fragen
+- **Round-Robin Zuweisung**: Jeder User bekommt automatisch ein Subset (1-4) zugewiesen
+- **On-Demand Generation**: Keine Pre-Seeding nötig - Antworten werden live generiert
+- **5-Fragen Prefetch**: Parallele Background-Generierung für minimale Wartezeit
+- **Completion Detection**: Automatischer Stopp nach 15 Fragen
+- **Subset-Validierung**: Backend prüft Fragen gehören zum zugewiesenen Subset
+- **Blind A/B Testing**: Deterministische Position-Shuffling mit MD5-Hashing
 
 ## 🏗️ Architektur
 
@@ -15,17 +25,26 @@ Sammle Votes zum Vergleich zweier KI-generierter Antworten. Jedes Vergleichspaar
 │  Voting UI (8002)                      │
 │  - Comparisons anzeigen                │
 │  - Voting Interface                    │
-│  - Live Statistiken                    │
-│  - CSV Export                          │
+│  - Session-basiertes Voting            │
+│  - 4-Subset Round-Robin                │
+│  - 5-Fragen Prefetch Buffer            │
+│  - Blind A/B Testing                   │
+│  - Completion Detection                │
 ├────────────────────────────────────────┤
 │         FastAPI (8001)                 │
 ├──────────────────────┬─────────────────┤
 │  Arena API           │  Storage        │
-│ • /arena/vote        │                 │
-│ • /arena/comparisons │  arena_votes.   │
-│ • /arena/statistics  │  jsonl          │
+│ • /arena/generate    │                 │
+│ • /arena/vote        │  arena_votes.   │
+│ • /arena/questions-  │  jsonl          │
+│   for-subset/{id}    │                 │
+│ • /arena/statistics  │                 │
+│ • /arena/assign-     │                 │
+│   subset             │                 │
 ├──────────────────────┴─────────────────┤
-│    Optional: Azure OpenAI              │
+│    External Chatbots (9001/9002)      │
+│    - kicampus-v1 (original)           │
+│    - kicampus-v1-improved             │
 └────────────────────────────────────────┘
 ```
 
@@ -33,20 +52,26 @@ Sammle Votes zum Vergleich zweier KI-generierter Antworten. Jedes Vergleichspaar
 
 | Datei | Zweck | Status |
 |-------|-------|--------|
+| `src/openwebui/arena_questions.py` | Question Catalog mit 4 Subsets | ✨ NEW |
 | `src/openwebui/voting_system.py` | JSONL-basierte Vote-Persistenz | ✅ Aktiv |
-| `src/openwebui/voting_ui_simple.py` | Web Dashboard (Port 8002) | ✅ Aktiv |
-| `src/openwebui/openwebui_api_llm.py` | API mit Voting Endpoints | ✅ Aktiv |
-| `src/openwebui/arena_voting.py` | CLI Tool (optional) | ⚠️ Optional |
-| `src/openwebui/voting_widget.py` | HTML Widget (optional) | ⚠️ Optional |
+| `src/openwebui/voting_ui_simple.py` | Web Dashboard mit Prefetching (Port 8002) | ✅ Aktiv |
+| `src/openwebui/openwebui_api_llm.py` | API mit On-Demand Generation + Voting | ✅ Aktiv |
+| `src/llm/http_proxy_assistant.py` | Dual-API Format Support (messages/thread) | ✅ Aktiv |
+| `config/models.yaml` | Model Registry mit use_thread_api config | ✅ Aktiv |
+| `docs/SEEDING.md` | Pre-Seeding Workflow | ⚠️ DEPRECATED |
+| `src/openwebui/arena_voting.py` | CLI Tool | ⚠️ Optional |
+| `src/openwebui/voting_widget.py` | HTML Widget | ⚠️ Optional |
 | `src/openwebui/data/arena_votes.jsonl` | Live Vote Storage | ✅ Aktiv |
 
-**Voting API Endpoints (in openwebui_api_llm.py):**
+**Wichtige API Endpoints (in openwebui_api_llm.py):**
 ```
-POST   /arena/save-comparison      # Vergleich speichern
-POST   /arena/vote                 # Vote abgeben
-GET    /arena/statistics           # Statistiken
-GET    /arena/comparisons          # Alle Comparisons
-GET    /arena/comparison/{id}      # Einzelner Vergleich
+POST   /arena/generate                # ✨ On-Demand Answer Generation
+GET    /arena/questions-for-subset/{id} # ✨ Fragen für Subset 1-4
+POST   /arena/vote                    # Vote abgeben
+GET    /arena/assign-subset           # ✨ Round-Robin Subset-Zuweisung
+GET    /arena/statistics              # Statistiken
+GET    /arena/comparisons             # Alle Comparisons
+GET    /arena/voted?session_id=X      # ✨ Voted IDs für Session
 ```
 
 ## 🚀 Quick Start

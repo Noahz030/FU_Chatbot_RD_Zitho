@@ -1,12 +1,20 @@
 # FU Campus Chatbot - Arena Voting System
 
-Leichtes, produktionsreifes System zum Vergleichen und Bewerten von KI-generierten Antworten mit Web-Dashboard und statistischer Auswertung.
+Leichtes, produktionsreifes System zum Vergleichen und Bewerten von KI-generierten Antworten mit Web-Dashboard, On-Demand-Generierung und statistischer Auswertung.
 
 ## 🎯 Überblick
 
 Das System besteht aus zwei Hauptkomponenten:
-- **Arena API** (Port 8001): FastAPI Backend mit Voting-Endpoints und JSONL-basierter Persistenz
-- **Voting Dashboard** (Port 8002): Web-Interface zum Abstimmen und Ergebnisse ansehen
+- **Arena API** (Port 8001): FastAPI Backend mit On-Demand Answer Generation, Voting-Endpoints und JSONL-basierter Persistenz
+- **Voting Dashboard** (Port 8002): Web-Interface mit 4-Subset System, Background-Prefetching und Blind A/B Testing
+
+### ✨ Neue Features (Januar 2026)
+- 🎯 **4-Subset System**: 59 Fragen in 4 Subsets à ~15 Fragen aufgeteilt
+- ⚡ **On-Demand Generierung**: Frische Antworten für jede Session (maximale Varianz)
+- 🚀 **5-Fragen Prefetch Buffer**: Parallele Background-Generierung für minimale Wartezeit
+- 🔀 **Round-Robin Subset-Zuweisung**: Gleichmäßige Verteilung der User auf Subsets
+- ✅ **Completion Detection**: Automatischer Stopp nach 15 Fragen pro Subset
+- 🔒 **Subset-Validierung**: Backend prüft dass Fragen zum zugewiesenen Subset gehören
 
 Alle Votes werden persistent in `arena_votes.jsonl` gespeichert.
 
@@ -47,7 +55,10 @@ docker ps | grep arena
 ```
 src/openwebui/
 ├── arena_api.py                    # Alias für openwebui_api_llm.py
-├── openwebui_api_llm.py           # Main API (LLM + Voting)
+├── openwebui_api_llm.py           # Main API (LLM + Voting + On-Demand Generation)
+├── arena_questions.py             # ✨ NEW: Question catalog mit 4 Subsets
+├── voting_ui_simple.py            # Voting Dashboard mit Prefetching
+├── voting_system.py               # JSONL-basierte Vote-Persistenz
 ├── voting_system.py               # JSONL Storage Engine
 ├── voting_ui_simple.py            # Web Dashboard
 ├── arena_voting.py                # CLI Tool (optional)
