@@ -1,5 +1,7 @@
 # 🏆 Arena Voting System - Dokumentation
 
+> Status: Legacy-Dokumentation. Die aktuelle, schlanke UI läuft über `voting_ui_simple.py` im `openwebui-api` Container (Port 8011 in Docker Compose). Verwende diese Datei als Referenz für neue Anpassungen.
+
 Vollständiges System für Side-by-Side Benchmarking von KI-Campus Chatbot Versionen mit automatischem Voting und Statistik-Logging.
 
 ## 🎯 Ziel

@@ -15,6 +15,9 @@ Das System besteht aus zwei Hauptkomponenten:
 - 🔀 **Round-Robin Subset-Zuweisung**: Gleichmäßige Verteilung der User auf Subsets
 - ✅ **Completion Detection**: Automatischer Stopp nach 15 Fragen pro Subset
 - 🔒 **Subset-Validierung**: Backend prüft dass Fragen zum zugewiesenen Subset gehören
+- 🛡️ **Rate Limits**: 10/min je Session+IP und 20/min je IP, mit klaren 429/403 Meldungen
+- 🛡️ **CSRF-Schutz**: Token-basierter Vote-Submit mit erneuter Token-Fetch nach jedem Vote
+- 🎲 **Deterministische Fragenreihenfolge**: Pro Session/Subet geshuffelte, eindeutige Reihenfolge ohne Wiederholungen
 
 Alle Votes werden persistent in `arena_votes.jsonl` gespeichert.
 
