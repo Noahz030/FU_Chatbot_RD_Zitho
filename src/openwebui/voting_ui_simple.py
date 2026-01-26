@@ -534,15 +534,33 @@ def index():
                 </div>
             `;
 
-            // Safely inject text to avoid breaking markup
+            // Safely render answers with link support for citations
             const qEl = document.getElementById('question');
             const aEl = document.getElementById('ansA');
             const bEl = document.getElementById('ansB');
 
+            const renderAnswer = (el, text) => {
+                if (!el) return;
+                const raw = text || '';
+                // Escape HTML first to avoid injection
+                let safe = raw
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;');
+                // Newlines -> <br> without regex escaping pitfalls
+                safe = safe.split('\\n').join('<br>');
+                // Re-enable citation anchors of the form <a href="..."><sup>[n]</sup></a>
+                // Accept both &quot; and raw " in the escaped string
+                safe = safe.replace(/&lt;a href=(?:&quot;|")(.*?)(?:&quot;|")&gt;&lt;sup&gt;\[(\d+)]&lt;\/sup&gt;&lt;\/a&gt;/g, '<a href="$1" target="_blank" rel="noopener noreferrer"><sup>[$2]</sup></a>');
+                // Re-enable regular anchors like <a href="https://...">Text</a> while keeping other HTML escaped
+                safe = safe.replace(/&lt;a href=(?:&quot;|")(https?:\/\/[^"&]+)(?:&quot;|")&gt;(.*?)&lt;\/a&gt;/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$2</a>');
+                el.innerHTML = safe;
+            };
+
             if (qEl) qEl.textContent = comp.question || '';
             // Use shuffled answers for blind A/B testing
-            if (aEl) aEl.textContent = comp.actual_answer_a || comp.answer_a || '';
-            if (bEl) bEl.textContent = comp.actual_answer_b || comp.answer_b || '';
+            renderAnswer(aEl, comp.actual_answer_a || comp.answer_a || '');
+            renderAnswer(bEl, comp.actual_answer_b || comp.answer_b || '');
         }
 
         function selectVote(vote) {
