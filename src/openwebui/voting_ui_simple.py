@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 import requests
+from src.openwebui.openwebui_api_llm import get_csrf_token_for_session
 
 app = FastAPI()
 
@@ -29,6 +30,13 @@ else:
         allow_headers=["*"],
         allow_credentials=True,
     )
+
+@app.get("/csrf-token")
+def get_csrf_token(session_id: str):
+    """Get CSRF token for a session. Called by voting UI before rendering form."""
+    token = get_csrf_token_for_session(session_id)
+    return {"csrf_token": token}
+
 
 @app.get("/", response_class=HTMLResponse)
 def index():
@@ -134,6 +142,7 @@ def index():
         let votedInSubset = 0;
         let votedSet = new Set();
         let sessionId = null;
+        let csrfToken = null;  // CSRF token for vote submission protection
         let prefetchQueue = [];  // Queue of pre-generated comparisons (up to MAX_PREFETCH)
         let isPrefetching = false;  // Flag to prevent concurrent prefetching
         const MAX_PREFETCH = 10;  // Larger buffer for faster UX
@@ -153,6 +162,20 @@ def index():
             }
             localStorage.setItem('arena_session_id', sid);
             return sid;
+        }
+
+        async function fetchCsrfToken(sessionId) {
+            """Fetch CSRF token for current session"""
+            try {
+                const resp = await fetch(API + '/csrf-token?session_id=' + encodeURIComponent(sessionId));
+                if (!resp.ok) throw new Error('Failed to fetch CSRF token');
+                const data = await resp.json();
+                csrfToken = data.csrf_token;
+                console.log('✅ CSRF token obtained');
+            } catch (e) {
+                console.error('Failed to fetch CSRF token:', e);
+                csrfToken = null;
+            }
         }
 
         // Session-Tracking via LocalStorage
@@ -195,6 +218,9 @@ def index():
             // Subset zuweisen falls noch nicht geschehen
             await assignSubsetIfNeeded();
             sessionId = ensureSessionId();
+            
+            // Fetch CSRF token for session
+            await fetchCsrfToken(sessionId);
             
             // ON-DEMAND MODE: Immer neue Antworten generieren für maximale Varianz
             // (anstatt vorhandene Comparisons zu laden)
@@ -577,6 +603,11 @@ def index():
                 return;
             }
             
+            if (!csrfToken) {
+                alert('❌ Fehler: CSRF Token nicht verfügbar. Bitte lade die Seite neu.');
+                return;
+            }
+            
             try {
                 const resp = await fetch(API + '/arena/vote', {
                     method: 'POST',
@@ -588,7 +619,8 @@ def index():
                         comparison_id: id,
                         vote: selectedVote,
                         comment: null,
-                        subset_id: subsetId || assignedSubset
+                        subset_id: subsetId || assignedSubset,
+                        csrf_token: csrfToken
                     })
                 });
                 
@@ -596,6 +628,9 @@ def index():
                     selectedVote = null;
                     votedSet.add(String(id));
                     votedInSubset++;
+                    
+                    // Fetch new CSRF token for next vote
+                    await fetchCsrfToken(sessionId);
                     
                     // Trigger prefetch refill immediately after vote (aggressive refilling)
                     if (prefetchQueue.length <= REFILL_THRESHOLD) {
@@ -605,7 +640,12 @@ def index():
                     // On-demand mode: Generiere nächste Frage statt zu laden
                     await generateOnDemandComparison();
                 } else {
-                    alert('❌ Fehler: ' + resp.statusText);
+                    const errData = await resp.json().catch(() => ({}));
+                    if (resp.status === 403) {
+                        alert('❌ Sicherheit: CSRF Token ungültig. Bitte lade die Seite neu.');
+                    } else {
+                        alert('❌ Fehler: ' + (errData.detail || resp.statusText));
+                    }
                 }
             } catch (e) {
                 alert('❌ Fehler: ' + e.message);

@@ -6,6 +6,7 @@ Inkludiert Arena Voting System für Benchmarking.
 import asyncio
 import json
 import os
+import secrets
 import time
 import uuid
 from datetime import datetime
@@ -81,6 +82,92 @@ async def verify_arena_key(api_key: Optional[str] = Depends(api_key_header)):
             )
     # In LOCAL/STAGING: Kein API-Key erforderlich
     return True
+
+
+def check_generation_rate_limit(session_id: str, client_ip: Optional[str] = None) -> None:
+    """Check rate limit for /arena/generate endpoint (max 1 per RATE_LIMIT_SECONDS).
+    
+    Args:
+        session_id: User session ID
+        client_ip: Client IP address (from X-Forwarded-For or remote addr)
+        
+    Raises:
+        HTTPException(429): If rate limit exceeded
+    """
+    global _rate_limit_cache
+    
+    # Cleanup old entries if cache grows too large
+    if len(_rate_limit_cache) > RATE_LIMIT_CLEANUP_THRESHOLD:
+        now = time.time()
+        _rate_limit_cache = {k: v for k, v in _rate_limit_cache.items() if now - v < 3600}  # Keep 1 hour
+    
+    # Use session_id + IP as key for defense in depth
+    cache_key = (session_id, client_ip or "unknown")
+    now = time.time()
+    
+    if cache_key in _rate_limit_cache:
+        elapsed = now - _rate_limit_cache[cache_key]
+        if elapsed < RATE_LIMIT_SECONDS:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Rate limit exceeded. Max 1 generation per {RATE_LIMIT_SECONDS} seconds. Retry after {RATE_LIMIT_SECONDS - int(elapsed)} seconds."
+            )
+    
+    _rate_limit_cache[cache_key] = now
+
+
+def get_csrf_token_for_session(session_id: str) -> str:
+    """Get or generate CSRF token for a session.
+    
+    Args:
+        session_id: User session ID
+        
+    Returns:
+        CSRF token (32 bytes, URL-safe)
+    """
+    if session_id not in _csrf_token_cache:
+        _csrf_token_cache[session_id] = secrets.token_urlsafe(32)
+    return _csrf_token_cache[session_id]
+
+
+def validate_csrf_token(session_id: str, token: str) -> bool:
+    """Validate CSRF token for a session.
+    
+    Args:
+        session_id: User session ID
+        token: CSRF token to validate
+        
+    Returns:
+        True if token is valid, False otherwise
+    """
+    expected_token = _csrf_token_cache.get(session_id)
+    if not expected_token or not token:
+        return False
+    # Constant-time comparison to prevent timing attacks
+    return secrets.compare_digest(expected_token, token)
+
+
+def rotate_csrf_token(session_id: str) -> str:
+    """Rotate CSRF token after successful vote to prevent token reuse.
+    
+    Args:
+        session_id: User session ID
+        
+    Returns:
+        New CSRF token
+    """
+    _csrf_token_cache[session_id] = secrets.token_urlsafe(32)
+    return _csrf_token_cache[session_id]
+
+# Rate limiting cache for /arena/generate endpoint
+# Format: {(session_id, client_ip): last_request_time}
+_rate_limit_cache: dict[tuple[str, str], float] = {}
+RATE_LIMIT_SECONDS = 5  # Max 1 request per 5 seconds per session+IP
+RATE_LIMIT_CLEANUP_THRESHOLD = 10000  # Cleanup cache if size exceeds this
+
+# CSRF token cache for voting endpoints
+# Format: {session_id: csrf_token}
+_csrf_token_cache: dict[str, str] = {}
 
 # Lazy-Loading der Assistenten via ModelRegistry
 # Assistants are loaded on-demand to avoid failures during startup
@@ -471,6 +558,7 @@ class VoteRequest(BaseModel):
     vote: Literal["A", "B", "tie", "both_bad"]
     comment: Optional[str] = None
     subset_id: Optional[int] = None
+    csrf_token: Optional[str] = None  # CSRF token for vote submission protection
 
 
 class GenerateComparisonRequest(BaseModel):
@@ -485,12 +573,14 @@ class GenerateComparisonRequest(BaseModel):
 async def generate_comparison(
     request: GenerateComparisonRequest,
     auth: bool = Depends(verify_arena_key),
+    x_forwarded_for: Optional[str] = Header(None),
 ):
     """
     Generiert on-demand Antworten von beiden Modellen für eine Frage.
     Speichert die Comparison in der globalen JSONL und gibt sie zurück.
     
     WICHTIG: Validiert, dass die Frage zur zugeordneten Subset des Users gehört.
+    Implementiert Rate-Limiting: max 1 Anfrage pro 5 Sekunden pro Session+IP.
     
     Dies ermöglicht pro-User Generierung mit Varianz in den Antworten,
     statt vorab fest geseete Vergleiche zu nutzen.
@@ -498,15 +588,23 @@ async def generate_comparison(
     Args:
         request: GenerateComparisonRequest mit question, session_id, user_id und subset_id
         auth: API-Key Verification
+        x_forwarded_for: Client IP from proxy (X-Forwarded-For header)
         
     Returns:
         ArenaComparison mit answers_a und answer_b von beiden Modellen
         
     Raises:
         400: Wenn question nicht zur subset_id gehört
+        429: Wenn Rate-Limit überschritten (max 1 pro 5 Sekunden)
         503: Wenn ein Modell nicht verfügbar ist
     """
     try:
+        # Extract client IP from X-Forwarded-For (proxy) or use "unknown"
+        client_ip = (x_forwarded_for.split(",")[0].strip() if x_forwarded_for else "unknown")
+        
+        # Check rate limit: max 1 generation per 5 seconds per session+IP
+        check_generation_rate_limit(request.session_id, client_ip)
+        
         # Validate that question belongs to the user's subset
         if request.subset_id is not None:
             valid_questions = get_questions_for_subset(request.subset_id)
@@ -625,9 +723,17 @@ def submit_vote(
 ):
     """
     Submitted einen Vote für einen existierenden Vergleich.
+    Validiert CSRF-Token zur Verhinderung von Cross-Site Vote Submission.
     """
     if not x_session_id:
         raise HTTPException(status_code=400, detail="X-Session-ID header required")
+
+    # Validate CSRF token (unless API key is provided, which bypasses CSRF)
+    if request.csrf_token and not validate_csrf_token(x_session_id, request.csrf_token):
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid or missing CSRF token. This vote cannot be processed for security reasons."
+        )
 
     # 1) Session-basiertes Vote-Logging (append-only JSONL)
     data_dir = Path(__file__).parent / "data"
@@ -654,9 +760,13 @@ def submit_vote(
     if not success:
         raise HTTPException(status_code=404, detail="Comparison ID not found")
     
+    # 3) Rotate CSRF token after successful vote to prevent token reuse
+    new_token = rotate_csrf_token(x_session_id)
+    
     return {
         "success": True,
-        "message": f"Vote '{request.vote}' recorded successfully"
+        "message": f"Vote '{request.vote}' recorded successfully",
+        "csrf_token": new_token  # Return new token for next vote
     }
 
 
