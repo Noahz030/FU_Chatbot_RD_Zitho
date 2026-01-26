@@ -85,39 +85,52 @@ async def verify_arena_key(api_key: Optional[str] = Depends(api_key_header)):
 
 
 def check_generation_rate_limit(session_id: str, client_ip: Optional[str] = None) -> None:
-    """Check rate limit for /arena/generate endpoint.
+    """Check rate limits for /arena/generate endpoint.
     
-    Allows up to RATE_LIMIT_MAX_REQUESTS within RATE_LIMIT_WINDOW_SECONDS
-    per (session_id, client_ip). Blocks additional requests with HTTP 429.
+    Two layers:
+    - Per (session_id, client_ip): up to SESSION_MAX_REQ within WINDOW_SECONDS
+    - Per client_ip: up to IP_MAX_REQ within WINDOW_SECONDS
     """
-    global _rate_limit_cache
+    global _rate_limit_cache, _rate_limit_ip_cache
     
-    # Cleanup old entries if cache grows too large
-    if len(_rate_limit_cache) > RATE_LIMIT_CLEANUP_THRESHOLD:
-        now = time.time()
-        cutoff = now - RATE_LIMIT_WINDOW_SECONDS
-        _rate_limit_cache = {
-            k: [t for t in v if t >= cutoff]
-            for k, v in _rate_limit_cache.items()
-        }
-        _rate_limit_cache = {k: v for k, v in _rate_limit_cache.items() if v}
-    
-    # Use session_id + IP as key for defense in depth
-    cache_key = (session_id, client_ip or "unknown")
     now = time.time()
     window_start = now - RATE_LIMIT_WINDOW_SECONDS
-    timestamps = _rate_limit_cache.get(cache_key, [])
-    timestamps = [t for t in timestamps if t >= window_start]
-    
-    if len(timestamps) >= RATE_LIMIT_MAX_REQUESTS:
-        retry_after = max(1, int(RATE_LIMIT_WINDOW_SECONDS - (now - min(timestamps))))
+
+    def _prune(cache: dict) -> dict:
+        return {k: [t for t in v if t >= window_start] for k, v in cache.items() if v}
+
+    # Periodic cleanup to keep memory bounded
+    if len(_rate_limit_cache) > RATE_LIMIT_CLEANUP_THRESHOLD:
+        _rate_limit_cache = _prune(_rate_limit_cache)
+    if len(_rate_limit_ip_cache) > RATE_LIMIT_CLEANUP_THRESHOLD:
+        _rate_limit_ip_cache = _prune(_rate_limit_ip_cache)
+
+    cache_key = (session_id, client_ip or "unknown")
+    ip_key = client_ip or "unknown"
+
+    # Session+IP bucket
+    session_ts = [t for t in _rate_limit_cache.get(cache_key, []) if t >= window_start]
+    if len(session_ts) >= RATE_LIMIT_SESSION_MAX_REQUESTS:
+        retry_after = max(1, int(RATE_LIMIT_WINDOW_SECONDS - (now - min(session_ts))))
         raise HTTPException(
             status_code=429,
-            detail=f"Rate limit exceeded. Max {RATE_LIMIT_MAX_REQUESTS} generations per {RATE_LIMIT_WINDOW_SECONDS} seconds. Retry after {retry_after} seconds."
+            detail=f"Rate limit exceeded. Max {RATE_LIMIT_SESSION_MAX_REQUESTS} generations per {RATE_LIMIT_WINDOW_SECONDS} seconds for this session. Retry after {retry_after} seconds."
         )
-    
-    timestamps.append(now)
-    _rate_limit_cache[cache_key] = timestamps
+
+    # IP-wide bucket
+    ip_ts = [t for t in _rate_limit_ip_cache.get(ip_key, []) if t >= window_start]
+    if len(ip_ts) >= RATE_LIMIT_IP_MAX_REQUESTS:
+        retry_after = max(1, int(RATE_LIMIT_WINDOW_SECONDS - (now - min(ip_ts))))
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded. Max {RATE_LIMIT_IP_MAX_REQUESTS} generations per {RATE_LIMIT_WINDOW_SECONDS} seconds for this IP. Retry after {retry_after} seconds."
+        )
+
+    # Record current timestamp
+    session_ts.append(now)
+    ip_ts.append(now)
+    _rate_limit_cache[cache_key] = session_ts
+    _rate_limit_ip_cache[ip_key] = ip_ts
 
 
 def get_csrf_token_for_session(session_id: str) -> str:
@@ -166,8 +179,12 @@ def rotate_csrf_token(session_id: str) -> str:
 # Rate limiting cache for /arena/generate endpoint
 # Format: {(session_id, client_ip): [request_timestamps]}
 _rate_limit_cache: dict[tuple[str, str], list[float]] = {}
-RATE_LIMIT_MAX_REQUESTS = 3  # Burst size per window
-RATE_LIMIT_WINDOW_SECONDS = 60  # Window length in seconds
+# Format: {client_ip: [request_timestamps]}
+_rate_limit_ip_cache: dict[str, list[float]] = {}
+# Allow short bursts: 10 req/min per session+IP; cap per IP to prevent multi-session abuse
+RATE_LIMIT_SESSION_MAX_REQUESTS = 10
+RATE_LIMIT_IP_MAX_REQUESTS = 20
+RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_CLEANUP_THRESHOLD = 10000  # Cleanup cache if size exceeds this
 
 # CSRF token cache for voting endpoints
@@ -732,6 +749,25 @@ def submit_vote(
     """
     if not x_session_id:
         raise HTTPException(status_code=400, detail="X-Session-ID header required")
+
+    # Block multiple votes from the same session (subset once done, lock out)
+    data_dir = Path(__file__).parent / "data"
+    user_votes_file = data_dir / "arena_user_votes.jsonl"
+    if user_votes_file.exists():
+        with user_votes_file.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    continue
+                if obj.get("session_id") == x_session_id:
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Diese Session hat bereits ein Vote abgegeben. Weitere Votes sind nicht erlaubt."
+                    )
 
     # Validate CSRF token (unless API key is provided, which bypasses CSRF)
     if request.csrf_token and not validate_csrf_token(x_session_id, request.csrf_token):

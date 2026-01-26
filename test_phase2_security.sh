@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Phase 2 Security Testing Script
-# Test 2: Rate Limiting - Burst of 3 allowed, 4th blocked
+# Test 2: Rate Limiting - Burst of 10 allowed, 11th blocked
 echo "TEST 2A: Rate Limiting - Request 1 (captures comparison_id)"
 REQ1_HTTP=$(curl -s -o /tmp/gen_response_1.json -w "%{http_code}" -X POST "$API_URL/arena/generate" \
     -H "Content-Type: application/json" \
@@ -94,42 +94,31 @@ else
 fi
 echo ""
 wait $FIRST_REQ_PID
-COMPARISON_ID=$(cat /tmp/gen_response_1.json | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")
-if [ -n "$COMPARISON_ID" ]; then
+echo "TEST 2B: Rate Limiting - Requests 2-10 (should pass)"
+PASS_COUNT=0
+for i in {2..10}; do
+    HTTP=$(curl -s -o /tmp/gen_response_$i.json -w "%{http_code}" -X POST "$API_URL/arena/generate" \
     echo "✓ First request completed (comparison_id: ${COMPARISON_ID:0:8}...)"
 else
     echo "⚠ First request may have failed (no comparison_id found)"
 fi
-echo ""
+        \"question\": \"What is artificial intelligence $i?\",
 
 # Test 3: Rate Limiting - Wait and Retry Should Succeed
-echo "TEST 3: Rate Limiting - Wait 6 Seconds and Retry"
-echo "Waiting 6 seconds..."
-sleep 6
-
-GEN_RESPONSE_2=$(curl -s -X POST "$API_URL/arena/generate" \
-  -H "Content-Type: application/json" \
-  -H "X-Forwarded-For: 192.168.1.100" \
-  -d "{
-    \"session_id\": \"$SESSION_ID\",
-    \"question\": \"What is deep learning?\",
-    \"arena_id\": \"test_arena\",
-    \"csrf_token\": \"$CSRF_TOKEN\"
-  }")
-
-STATUS_2=$(echo $GEN_RESPONSE_2 | grep -o '"status":"[^"]*"' | cut -d'"' -f4 || echo "error")
-if [ "$STATUS_2" == "success" ] || echo $GEN_RESPONSE_2 | grep -q "comparison"; then
-    echo "✓ Request after cooldown succeeded"
+    }")
+    if [ "$HTTP" == "200" ]; then
+        PASS_COUNT=$((PASS_COUNT+1))
+    fi
+done
+if [ "$PASS_COUNT" == "9" ]; then
+    echo "✓ Requests 2-10 succeeded"
 else
-    echo "✓ Request after cooldown processed (status: $STATUS_2)"
+    echo "✗ Unexpected failures in requests 2-10 (passed $PASS_COUNT/9)"
 fi
 echo ""
 
-# Test 4: CSRF Token Validation - Invalid Token Should Fail
-echo "TEST 4: CSRF Token Validation - Invalid Token (should get 403)"
-echo "Request: POST $API_URL/arena/vote with invalid CSRF token"
-
-HTTP_CODE=$(curl -s -o /tmp/response.json -w "%{http_code}" -X POST "$API_URL/arena/vote" \
+echo "TEST 2C: Rate Limiting - Request 11 (should get 429)"
+REQ4_HTTP=$(curl -s -o /tmp/response.json -w "%{http_code}" -X POST "$API_URL/arena/generate" \
   -H "Content-Type: application/json" \
   -H "X-Session-ID: $SESSION_ID" \
   -H "X-Forwarded-For: 192.168.1.100" \
@@ -138,18 +127,18 @@ HTTP_CODE=$(curl -s -o /tmp/response.json -w "%{http_code}" -X POST "$API_URL/ar
     \"vote\": \"A\",
     \"csrf_token\": \"invalid_token_12345\"
   }")
-
-if [ "$HTTP_CODE" == "403" ]; then
+if [ "$REQ4_HTTP" == "429" ]; then
+        echo "✓ Rate limit enforced on 11th request (HTTP 429)"
     echo "✓ Invalid CSRF token rejected! HTTP 403 returned"
     cat /tmp/response.json | python3 -m json.tool 2>/dev/null || cat /tmp/response.json
 elif [ "$HTTP_CODE" == "404" ]; then
     echo "⚠ Comparison not found (HTTP 404 - expected for test comparison)"
     cat /tmp/response.json | head -c 100
 else
-    echo "⚠ Unexpected response (HTTP $HTTP_CODE)"
-    cat /tmp/response.json | head -c 100
-fi
-echo ""
+# Test 3: Rate Limiting - Wait for window reset and retry (takes ~65s)
+echo "TEST 3: Rate Limiting - Wait for window reset and retry"
+echo "Waiting 65 seconds to allow window reset..."
+sleep 65
 
 # Test 5: Valid CSRF Token and Token Rotation
 echo "TEST 5: Valid CSRF Token Should Succeed & Rotate Token"
