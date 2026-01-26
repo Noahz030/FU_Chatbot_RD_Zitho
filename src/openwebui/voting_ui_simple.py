@@ -634,7 +634,8 @@ def index():
                 } else {
                     const errData = await resp.json().catch(() => ({}));
                     if (resp.status === 403) {
-                        alert('❌ Sicherheit: CSRF Token ungültig. Bitte lade die Seite neu.');
+                        const detail = errData.detail || 'Sicherheit: Anfrage abgelehnt.';
+                        alert('❌ ' + detail);
                     } else {
                         alert('❌ Fehler: ' + (errData.detail || resp.statusText));
                     }

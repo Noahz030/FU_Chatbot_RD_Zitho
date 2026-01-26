@@ -750,7 +750,7 @@ def submit_vote(
     if not x_session_id:
         raise HTTPException(status_code=400, detail="X-Session-ID header required")
 
-    # Block multiple votes from the same session (subset once done, lock out)
+    # Prevent duplicate vote on the same comparison by the same session
     data_dir = Path(__file__).parent / "data"
     user_votes_file = data_dir / "arena_user_votes.jsonl"
     if user_votes_file.exists():
@@ -763,10 +763,10 @@ def submit_vote(
                     obj = json.loads(line)
                 except Exception:
                     continue
-                if obj.get("session_id") == x_session_id:
+                if obj.get("session_id") == x_session_id and obj.get("comparison_id") == request.comparison_id:
                     raise HTTPException(
                         status_code=403,
-                        detail="Diese Session hat bereits ein Vote abgegeben. Weitere Votes sind nicht erlaubt."
+                        detail="Diese Session hat diesen Vergleich bereits gevotet."
                     )
 
     # Validate CSRF token (unless API key is provided, which bypasses CSRF)
