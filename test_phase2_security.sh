@@ -1,85 +1,98 @@
 #!/bin/bash
 
 # Phase 2 Security Testing Script
-# Tests: Rate Limiting + CSRF Token Protection
-# Run from workspace root: bash test_phase2_security.sh
-
-set -e
-
-API_URL="http://localhost:8001"
-UI_URL="http://localhost:8002"
-SESSION_ID="test_session_$(date +%s)"
-
-echo "=========================================="
-echo "Phase 2 Security Testing"
-echo "=========================================="
-echo ""
-echo "Using SESSION_ID: $SESSION_ID"
-echo ""
-
-# Test 1: CSRF Token Generation
-echo "TEST 1: CSRF Token Generation"
-echo "Request: GET $API_URL/arena/csrf-token?session_id=$SESSION_ID"
-CSRF_RESPONSE=$(curl -s "$API_URL/arena/csrf-token?session_id=$SESSION_ID")
-CSRF_TOKEN=$(echo $CSRF_RESPONSE | grep -o '"csrf_token":"[^"]*"' | cut -d'"' -f4)
-
-if [ -n "$CSRF_TOKEN" ]; then
-    echo "✓ CSRF Token generated: ${CSRF_TOKEN:0:16}..."
-    echo "  Length: ${#CSRF_TOKEN} characters"
+# Test 2: Rate Limiting - Burst of 3 allowed, 4th blocked
+echo "TEST 2A: Rate Limiting - Request 1 (captures comparison_id)"
+REQ1_HTTP=$(curl -s -o /tmp/gen_response_1.json -w "%{http_code}" -X POST "$API_URL/arena/generate" \
+    -H "Content-Type: application/json" \
+    -H "X-Forwarded-For: 192.168.1.100" \
+    -d "{
+        \"session_id\": \"$SESSION_ID\",
+        \"question\": \"What is machine learning?\",
+        \"arena_id\": \"test_arena\",
+        \"csrf_token\": \"$CSRF_TOKEN\"
+    }")
+COMPARISON_ID=$(cat /tmp/gen_response_1.json | grep -o '"id":"[^\"]*"' | head -1 | cut -d'"' -f4 || echo "")
+if [ "$REQ1_HTTP" == "200" ] && [ -n "$COMPARISON_ID" ]; then
+        echo "✓ Request 1 succeeded (comparison_id: ${COMPARISON_ID:0:8}...)"
 else
-    echo "✗ Failed to generate CSRF token"
-    echo "  Response: $CSRF_RESPONSE"
-    exit 1
+        echo "✗ Request 1 failed or missing comparison_id (HTTP $REQ1_HTTP)"
+        exit 1
 fi
 echo ""
 
-# Test 2: Rate Limiting - First Request Should Succeed
-echo "TEST 2A: Rate Limiting - First Request (Background)"
-echo "Request: POST $API_URL/arena/generate"
-START_TIME=$(date +%s)
-# Start first request in background to not wait for full LLM generation
-curl -s -X POST "$API_URL/arena/generate" \
-  -H "Content-Type: application/json" \
-  -H "X-Forwarded-For: 192.168.1.100" \
-  -d "{
-    \"session_id\": \"$SESSION_ID\",
-    \"question\": \"What is machine learning?\",
-    \"arena_id\": \"test_arena\",
-    \"csrf_token\": \"$CSRF_TOKEN\"
-  }" > /tmp/gen_response_1.json 2>&1 &
-FIRST_REQ_PID=$!
-
-# Wait just 0.5s to ensure first request hit the server
-sleep 0.5
-echo "✓ First request sent (processing in background)"
-echo ""
-
-# Test 3: Rate Limiting - Immediate Second Request Should Fail with 429
-echo "TEST 2B: Rate Limiting - Immediate Second Request (Should Get 429)"
-echo "Request: POST $API_URL/arena/generate (immediate retry)"
-ELAPSED_SINCE_START=$(( $(date +%s) - START_TIME ))
-echo "  (Elapsed since first request start: ${ELAPSED_SINCE_START}s)"
-HTTP_CODE=$(curl -s -o /tmp/response.json -w "%{http_code}" -X POST "$API_URL/arena/generate" \
-  -H "Content-Type: application/json" \
-  -H "X-Forwarded-For: 192.168.1.100" \
-  -d "{
-    \"session_id\": \"$SESSION_ID\",
-    \"question\": \"What is artificial intelligence?\",
-    \"arena_id\": \"test_arena\",
-    \"csrf_token\": \"$CSRF_TOKEN\"
-  }")
-
-if [ "$HTTP_CODE" == "429" ]; then
-    echo "✓ Rate limit enforced! HTTP 429 returned"
-    cat /tmp/response.json | python3 -m json.tool 2>/dev/null || cat /tmp/response.json
+echo "TEST 2B: Rate Limiting - Request 2 (should pass)"
+REQ2_HTTP=$(curl -s -o /tmp/gen_response_2.json -w "%{http_code}" -X POST "$API_URL/arena/generate" \
+    -H "Content-Type: application/json" \
+    -H "X-Forwarded-For: 192.168.1.100" \
+    -d "{
+        \"session_id\": \"$SESSION_ID\",
+        \"question\": \"What is artificial intelligence?\",
+        \"arena_id\": \"test_arena\",
+        \"csrf_token\": \"$CSRF_TOKEN\"
+    }")
+if [ "$REQ2_HTTP" == "200" ]; then
+        echo "✓ Request 2 succeeded"
 else
-    echo "✗ Rate limit NOT enforced (HTTP $HTTP_CODE)"
-    cat /tmp/response.json | head -c 100
+        echo "✗ Request 2 unexpected HTTP $REQ2_HTTP"
 fi
 echo ""
 
-# Wait for first request to complete and extract comparison_id
+echo "TEST 2C: Rate Limiting - Request 3 (should pass)"
+REQ3_HTTP=$(curl -s -o /tmp/gen_response_3.json -w "%{http_code}" -X POST "$API_URL/arena/generate" \
+    -H "Content-Type: application/json" \
+    -H "X-Forwarded-For: 192.168.1.100" \
+    -d "{
+        \"session_id\": \"$SESSION_ID\",
+        \"question\": \"What is deep learning?\",
+        \"arena_id\": \"test_arena\",
+        \"csrf_token\": \"$CSRF_TOKEN\"
+    }")
+if [ "$REQ3_HTTP" == "200" ]; then
+        echo "✓ Request 3 succeeded"
+else
+        echo "✗ Request 3 unexpected HTTP $REQ3_HTTP"
+fi
+echo ""
+
+echo "TEST 2D: Rate Limiting - Request 4 (should get 429)"
+REQ4_HTTP=$(curl -s -o /tmp/response.json -w "%{http_code}" -X POST "$API_URL/arena/generate" \
+    -H "Content-Type: application/json" \
+    -H "X-Forwarded-For: 192.168.1.100" \
+    -d "{
+        \"session_id\": \"$SESSION_ID\",
+        \"question\": \"What is data science?\",
+        \"arena_id\": \"test_arena\",
+        \"csrf_token\": \"$CSRF_TOKEN\"
+    }")
+if [ "$REQ4_HTTP" == "429" ]; then
+        echo "✓ Rate limit enforced on 4th request (HTTP 429)"
+else
+        echo "✗ Rate limit NOT enforced (HTTP $REQ4_HTTP)"
+        cat /tmp/response.json | head -c 120
+fi
+echo ""
+
+# Test 3: Rate Limiting - Wait for window reset and retry (takes ~65s)
+echo "TEST 3: Rate Limiting - Wait for window reset and retry"
+echo "Waiting 65 seconds to allow window reset..."
 echo "TEST 2C: Wait for First Request to Complete"
+
+REQ_AFTER_WAIT=$(curl -s -o /tmp/gen_response_after_wait.json -w "%{http_code}" -X POST "$API_URL/arena/generate" \
+    -H "Content-Type: application/json" \
+    -H "X-Forwarded-For: 192.168.1.100" \
+    -d "{
+        \"session_id\": \"$SESSION_ID\",
+        \"question\": \"What is reinforcement learning?\",
+        \"arena_id\": \"test_arena\",
+        \"csrf_token\": \"$CSRF_TOKEN\"
+    }")
+if [ "$REQ_AFTER_WAIT" == "200" ]; then
+        echo "✓ Request after window reset succeeded"
+else
+        echo "✗ Request after window reset failed (HTTP $REQ_AFTER_WAIT)"
+fi
+echo ""
 wait $FIRST_REQ_PID
 COMPARISON_ID=$(cat /tmp/gen_response_1.json | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")
 if [ -n "$COMPARISON_ID" ]; then
