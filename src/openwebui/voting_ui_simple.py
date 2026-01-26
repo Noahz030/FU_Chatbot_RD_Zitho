@@ -7,7 +7,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 import requests
-from src.openwebui.openwebui_api_llm import get_csrf_token_for_session
 
 app = FastAPI()
 
@@ -30,13 +29,6 @@ else:
         allow_headers=["*"],
         allow_credentials=True,
     )
-
-@app.get("/csrf-token")
-def get_csrf_token(session_id: str):
-    """Get CSRF token for a session. Called by voting UI before rendering form."""
-    token = get_csrf_token_for_session(session_id)
-    return {"csrf_token": token}
-
 
 @app.get("/", response_class=HTMLResponse)
 def index():
@@ -167,7 +159,7 @@ def index():
         async function fetchCsrfToken(sessionId) {
             """Fetch CSRF token for current session"""
             try {
-                const resp = await fetch(API + '/csrf-token?session_id=' + encodeURIComponent(sessionId));
+                const resp = await fetch(API + '/arena/csrf-token?session_id=' + encodeURIComponent(sessionId));
                 if (!resp.ok) throw new Error('Failed to fetch CSRF token');
                 const data = await resp.json();
                 csrfToken = data.csrf_token;

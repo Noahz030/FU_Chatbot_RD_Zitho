@@ -804,6 +804,13 @@ def assign_subset(auth: bool = Depends(verify_arena_key)):
     return {"subset_id": subset_id}
 
 
+@app.get("/arena/csrf-token")
+def get_csrf_token(session_id: str, auth: bool = Depends(verify_arena_key)):
+    """Get CSRF token for a session. Called by voting UI before voting."""
+    token = get_csrf_token_for_session(session_id)
+    return {"csrf_token": token}
+
+
 @app.get("/arena/statistics")
 def get_statistics(auth: bool = Depends(verify_arena_key)):
     """Aggregierte Statistiken über individuelle Nutzer-Votes.
