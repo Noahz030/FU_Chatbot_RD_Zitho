@@ -134,9 +134,12 @@ def index():
         let votedInSubset = 0;
         let votedSet = new Set();
         let sessionId = null;
-        let prefetchQueue = [];  // Queue of pre-generated comparisons (up to 5)
+        let prefetchQueue = [];  // Queue of pre-generated comparisons (up to MAX_PREFETCH)
         let isPrefetching = false;  // Flag to prevent concurrent prefetching
-        const MAX_PREFETCH = 5;  // Number of questions to prefetch
+        const MAX_PREFETCH = 10;  // Larger buffer for faster UX
+        const REFILL_THRESHOLD = 4;  // Refill earlier
+        const PREFETCH_CONCURRENCY = 4;  // Slightly more parallelism for faster refill
+        const PREFETCH_DELAY_MS = 100;  // Small spacing between batch starts
 
         function ensureSessionId() {
             let sid = localStorage.getItem('arena_session_id');
@@ -184,6 +187,8 @@ def index():
         // Debug: Show we started
         document.getElementById('container').innerHTML = '<div class="loading">⏳ JavaScript läuft, starte Fetch...</div>';
 
+        let cachedSubsetQuestions = null;
+
         async function load() {
             const container = document.getElementById('container');
             
@@ -211,11 +216,12 @@ def index():
                 comparisons = [];
                 totalInSubset = 0;
                 votedInSubset = votedSet.size;  // Anzahl der bereits gevoteten in dieser Session
+                cachedSubsetQuestions = null; // reset cache on new load
                 
                 // Generiere erste Comparison on-demand
                 await generateOnDemandComparison();
                 
-                // Start prefetching 5 questions immediately in background
+                // Start prefetching in background
                 fillPrefetchQueue();
                 
             } catch (e) {
@@ -259,24 +265,25 @@ def index():
                     return;
                 }
                 
-                const subsetResp = await fetch(API + '/arena/questions-for-subset/' + assignedSubset, {
-                    method: 'GET',
-                    headers: { 'Accept': 'application/json' }
-                });
-                
-                if (!subsetResp.ok) {
-                    throw new Error('Failed to fetch subset questions for prefetch');
+                if (!cachedSubsetQuestions) {
+                    const subsetResp = await fetch(API + '/arena/questions-for-subset/' + assignedSubset, {
+                        method: 'GET',
+                        headers: { 'Accept': 'application/json' }
+                    });
+                    
+                    if (!subsetResp.ok) {
+                        throw new Error('Failed to fetch subset questions for prefetch');
+                    }
+                    
+                    const subsetData = await subsetResp.json();
+                    cachedSubsetQuestions = subsetData.questions;
+                    totalInSubset = subsetData.total_questions;
                 }
                 
-                const subsetData = await subsetResp.json();
-                const subsetQuestions = subsetData.questions;
-                
-                // Generate multiple comparisons in parallel
-                const promises = [];
-                for (let i = 0; i < needed; i++) {
+                const subsetQuestions = cachedSubsetQuestions;
+                const generateOne = async () => {
                     const question = subsetQuestions[Math.floor(Math.random() * subsetQuestions.length)];
-                    
-                    const promise = fetch(API + '/arena/generate', {
+                    const resp = await fetch(API + '/arena/generate', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -288,25 +295,44 @@ def index():
                             subset_id: assignedSubset,
                             user_id: null
                         })
-                    })
-                    .then(resp => {
-                        if (!resp.ok) throw new Error('Prefetch failed: ' + resp.status);
-                        return resp.json();
-                    })
-                    .then(comparison => {
-                        prefetchQueue.push(comparison);
-                        console.log('✅ Prefetched [' + prefetchQueue.length + '/' + targetSize + ']:', comparison.question.substring(0, 50) + '...');
-                        return comparison;
-                    })
-                    .catch(e => {
-                        console.error('Single prefetch failed:', e);
-                        return null;
                     });
-                    
-                    promises.push(promise);
+                    if (!resp.ok) throw new Error('Prefetch failed: ' + resp.status);
+                    const comparison = await resp.json();
+                    prefetchQueue.push(comparison);
+                    console.log('✅ Prefetched [' + prefetchQueue.length + '/' + targetSize + ']:', comparison.question.substring(0, 50) + '...');
+                };
+                
+                // Run with limited concurrency
+                let inFlight = 0;
+                let completed = 0;
+                let index = 0;
+                const runNext = async () => {
+                    if (index >= needed) return;
+                    const current = index++;
+                    inFlight++;
+                    try {
+                        await generateOne();
+                    } catch (e) {
+                        console.error('Single prefetch failed:', e);
+                    } finally {
+                        inFlight--;
+                        completed++;
+                        if (completed < needed && inFlight < PREFETCH_CONCURRENCY) {
+                            await new Promise(resolve => setTimeout(resolve, PREFETCH_DELAY_MS));
+                            runNext();
+                        }
+                    }
+                };
+                // Kick off initial batch respecting concurrency cap
+                const starters = Math.min(PREFETCH_CONCURRENCY, needed);
+                for (let s = 0; s < starters; s++) {
+                    runNext();
+                }
+                // Wait until all are done
+                while (completed < needed) {
+                    await new Promise(resolve => setTimeout(resolve, 50));
                 }
                 
-                await Promise.all(promises);
                 console.log('✅ Prefetch batch complete. Queue size: ' + prefetchQueue.length);
                 
             } catch (e) {
@@ -338,14 +364,17 @@ def index():
                     return generateOnDemandComparison();  // Try next one
                 }
                 
-                console.log('⚡ Using prefetched comparison [' + prefetchQueue.length + ' remaining] (instant!)');
+                console.log('⚡ Using prefetched comparison [' + prefetchQueue.length + ' remaining in queue] (instant!)');
                 
                 // Add to local pool
                 comparisons = [comparison];
                 render();
                 
-                // Refill the queue in background
-                fillPrefetchQueue();
+                // Refill the queue in background EARLY if running low
+                if (prefetchQueue.length <= REFILL_THRESHOLD) {
+                    console.log('🔔 Queue running low (' + prefetchQueue.length + ' ≤ ' + REFILL_THRESHOLD + '), triggering refill...');
+                    fillPrefetchQueue();
+                }
                 return;
             }
             
@@ -356,18 +385,23 @@ def index():
                     throw new Error('No subset assigned. Getting subset first...');
                 }
                 
-                const subsetResp = await fetch(API + '/arena/questions-for-subset/' + assignedSubset, {
-                    method: 'GET',
-                    headers: { 'Accept': 'application/json' }
-                });
-                
-                if (!subsetResp.ok) {
-                    throw new Error('HTTP ' + subsetResp.status + ' - Failed to fetch subset questions');
+                // Use cached subset questions when available to avoid extra network calls
+                if (!cachedSubsetQuestions) {
+                    const subsetResp = await fetch(API + '/arena/questions-for-subset/' + assignedSubset, {
+                        method: 'GET',
+                        headers: { 'Accept': 'application/json' }
+                    });
+                    
+                    if (!subsetResp.ok) {
+                        throw new Error('HTTP ' + subsetResp.status + ' - Failed to fetch subset questions');
+                    }
+                    
+                    const subsetData = await subsetResp.json();
+                    cachedSubsetQuestions = subsetData.questions;
+                    totalInSubset = subsetData.total_questions;  // Set total questions in subset
                 }
                 
-                const subsetData = await subsetResp.json();
-                const subsetQuestions = subsetData.questions;
-                totalInSubset = subsetData.total_questions;  // Set total questions in subset
+                const subsetQuestions = cachedSubsetQuestions;
                 
                 console.log('Fetched subset questions:', {
                     subset: assignedSubset,
@@ -544,6 +578,11 @@ def index():
                     selectedVote = null;
                     votedSet.add(String(id));
                     votedInSubset++;
+                    
+                    // Trigger prefetch refill immediately after vote (aggressive refilling)
+                    if (prefetchQueue.length <= REFILL_THRESHOLD) {
+                        fillPrefetchQueue();
+                    }
                     
                     // On-demand mode: Generiere nächste Frage statt zu laden
                     await generateOnDemandComparison();

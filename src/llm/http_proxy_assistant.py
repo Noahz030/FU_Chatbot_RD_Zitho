@@ -23,14 +23,14 @@ class HTTPProxyAssistant:
     The external API must implement the /api/chat endpoint compatible with KICampusAssistant.
     """
     
-    def __init__(self, api_base_url: str, api_key: str = "arena-test-key", timeout: int = 60, use_thread_api: bool = False, **kwargs):
+    def __init__(self, api_base_url: str, api_key: str = "arena-test-key", timeout: int = 120, use_thread_api: bool = False, **kwargs):
         """
         Initialize HTTP proxy assistant
         
         Args:
             api_base_url: Base URL of the external chatbot API (e.g., http://localhost:9001)
             api_key: API key for authentication
-            timeout: Request timeout in seconds
+            timeout: Request timeout in seconds (default 120s to handle Azure rate limits)
             use_thread_api: If True, uses thread-based API (user_query + thread_id) instead of messages list
             **kwargs: Additional parameters (e.g., context_window) ignored by proxy
         """
@@ -41,7 +41,7 @@ class HTTPProxyAssistant:
         self.session = requests.Session()
         self.session.headers.update({"Api-Key": api_key})
         
-        logger.info(f"HTTPProxyAssistant initialized for {api_base_url} (thread_api={use_thread_api})")
+        logger.info(f"HTTPProxyAssistant initialized for {api_base_url} (thread_api={use_thread_api}, timeout={timeout}s)")
     
     def _convert_chat_history(self, chat_history: list[ChatMessage]) -> list[dict]:
         """Convert LlamaIndex ChatMessage to API format"""
@@ -113,10 +113,11 @@ class HTTPProxyAssistant:
             )
             
         except requests.Timeout:
-            logger.error(f"Timeout calling {self.api_base_url}/api/chat")
+            logger.error(f"Timeout calling {self.api_base_url}/api/chat after {self.timeout}s")
+            chatbot_name = "Chatbot A" if "9001" in self.api_base_url else "Chatbot B"
             return ChatMessage(
                 role=MessageRole.ASSISTANT,
-                content=f"[ERROR: Request timeout after {self.timeout}s]"
+                content=f"[ERROR: {chatbot_name} timeout after {self.timeout}s - möglicherweise Azure Rate Limit erreicht]"
             )
         except requests.HTTPError as e:
             logger.error(f"HTTP error: {e.response.status_code} - {e.response.text[:200]}")
