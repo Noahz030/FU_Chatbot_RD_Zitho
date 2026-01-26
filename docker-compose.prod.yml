@@ -123,7 +123,7 @@ services:
     environment:
       POSTGRES_DB: arena
       POSTGRES_USER: arena_user
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Error: POSTGRES_PASSWORD not set in .env.production}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
