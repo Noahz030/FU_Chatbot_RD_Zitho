@@ -8,6 +8,12 @@
 
 # Local environment variables and keys
 .env
+.env.local
+.env.*.local
+*.key
+*.pem
+arena_votes*.jsonl
+arena_user_votes.jsonl
 
 ## Local dev
 outputs
