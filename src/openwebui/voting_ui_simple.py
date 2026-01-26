@@ -157,7 +157,7 @@ def index():
         }
 
         async function fetchCsrfToken(sessionId) {
-            """Fetch CSRF token for current session"""
+            // Fetch CSRF token for current session
             try {
                 const resp = await fetch(API + '/arena/csrf-token?session_id=' + encodeURIComponent(sessionId));
                 if (!resp.ok) throw new Error('Failed to fetch CSRF token');
