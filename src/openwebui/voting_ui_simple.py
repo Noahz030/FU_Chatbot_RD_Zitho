@@ -137,10 +137,54 @@ def index():
         let csrfToken = null;  // CSRF token for vote submission protection
         let prefetchQueue = [];  // Queue of pre-generated comparisons (up to MAX_PREFETCH)
         let isPrefetching = false;  // Flag to prevent concurrent prefetching
+        // Question ordering to avoid duplicates within a subset
+        let questionOrder = [];
+        let questionCursor = 0;
+
         const MAX_PREFETCH = 10;  // Larger buffer for faster UX
         const REFILL_THRESHOLD = 4;  // Refill earlier
         const PREFETCH_CONCURRENCY = 4;  // Slightly more parallelism for faster refill
         const PREFETCH_DELAY_MS = 100;  // Small spacing between batch starts
+
+        function hashStringToSeed(str) {
+            let h = 1779033703 ^ str.length;
+            for (let i = 0; i < str.length; i++) {
+                h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+                h = (h << 13) | (h >>> 19);
+            }
+            return h >>> 0;
+        }
+
+        function mulberry32(a) {
+            return function() {
+                a |= 0; a = a + 0x6D2B79F5 | 0;
+                let t = Math.imul(a ^ (a >>> 15), 1 | a);
+                t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+                return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+            };
+        }
+
+        function shuffleWithSeed(arr, seed) {
+            const rng = mulberry32(seed);
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = Math.floor(rng() * (i + 1));
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+        }
+
+        function initQuestionOrder(subsetQuestions) {
+            questionOrder = [...subsetQuestions];
+            const seed = hashStringToSeed((sessionId || '') + '-' + (assignedSubset || ''));
+            shuffleWithSeed(questionOrder, seed);
+            questionCursor = 0;
+        }
+
+        function nextQuestion() {
+            if (questionCursor >= questionOrder.length) return null;
+            const q = questionOrder[questionCursor];
+            questionCursor += 1;
+            return q;
+        }
 
         function ensureSessionId() {
             let sid = localStorage.getItem('arena_session_id');
@@ -296,11 +340,13 @@ def index():
                     const subsetData = await subsetResp.json();
                     cachedSubsetQuestions = subsetData.questions;
                     totalInSubset = subsetData.total_questions;
+                    initQuestionOrder(cachedSubsetQuestions);
                 }
                 
                 const subsetQuestions = cachedSubsetQuestions;
                 const generateOne = async () => {
-                    const question = subsetQuestions[Math.floor(Math.random() * subsetQuestions.length)];
+                    const question = nextQuestion();
+                    if (!question) return; // nothing left
                     const resp = await fetch(API + '/arena/generate', {
                         method: 'POST',
                         headers: {
@@ -417,9 +463,13 @@ def index():
                     const subsetData = await subsetResp.json();
                     cachedSubsetQuestions = subsetData.questions;
                     totalInSubset = subsetData.total_questions;  // Set total questions in subset
+                    initQuestionOrder(cachedSubsetQuestions);
                 }
                 
                 const subsetQuestions = cachedSubsetQuestions;
+                if ((!questionOrder || questionOrder.length === 0) && subsetQuestions && subsetQuestions.length > 0) {
+                    initQuestionOrder(subsetQuestions);
+                }
                 
                 console.log('Fetched subset questions:', {
                     subset: assignedSubset,
@@ -444,8 +494,23 @@ def index():
                     return;
                 }
                 
-                // Pick a random question from subset
-                const question = subsetQuestions[Math.floor(Math.random() * subsetQuestions.length)];
+                // Pick the next deterministic question from subset order
+                const question = nextQuestion();
+                if (!question) {
+                    container.innerHTML = `
+                        <div class="completion" style="background: white; padding: 40px; border-radius: 8px; text-align: center;">
+                            <h2 style="font-size: 32px; margin: 0 0 15px;">✅ Subset abgeschlossen!</h2>
+                            <p style="font-size: 16px; color: #666; margin: 0 0 20px;">
+                                Du hast alle ${totalInSubset} Fragen in Subset ${assignedSubset} bewertet.
+                            </p>
+                            <p style="font-size: 14px; color: #999; margin: 0 0 30px;">
+                                Danke für deine Teilnahme an der Arena-Evaluierung!
+                            </p>
+                            <button class="submit" onclick="resetSession()" style="margin-top: 10px;">🔄 Neue Session starten</button>
+                        </div>
+                    `;
+                    return;
+                }
                 
                 console.log('Selected question:', question);
                 
