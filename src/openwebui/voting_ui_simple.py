@@ -585,13 +585,13 @@ def index():
         function render() {
             const container = document.getElementById('container');
 
-            // Debug: Log current state
-            console.log('render() called:', {
-                votedInSubset,
-                totalInSubset,
-                comparisonsLength: comparisons?.length,
-                completionCheck: votedInSubset >= totalInSubset && totalInSubset > 0
-            });
+            // Debug: Log current state with ACTUAL VALUES
+            console.log('render() called:');
+            console.log('  votedInSubset:', votedInSubset);
+            console.log('  totalInSubset:', totalInSubset);
+            console.log('  comparisons:', comparisons);
+            console.log('  comparisons.length:', comparisons?.length);
+            console.log('  completionCheck:', votedInSubset >= totalInSubset && totalInSubset > 0);
 
             // Check completion FIRST (before checking if comparisons are loaded)
             if (votedInSubset >= totalInSubset && totalInSubset > 0) {
