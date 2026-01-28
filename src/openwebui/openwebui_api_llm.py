@@ -627,9 +627,6 @@ async def generate_comparison(
         # Extract client IP from X-Forwarded-For (proxy) or use "unknown"
         client_ip = (x_forwarded_for.split(",")[0].strip() if x_forwarded_for else "unknown")
         
-        # Check rate limit: max 1 generation per 5 seconds per session+IP
-        check_generation_rate_limit(request.session_id, client_ip)
-        
         # Validate that question belongs to the user's subset
         if request.subset_id is not None:
             valid_questions = get_questions_for_subset(request.subset_id)
@@ -652,8 +649,11 @@ async def generate_comparison(
         )
         
         if existing:
-            # Return existing comparison (already shuffled)
+            # Return existing comparison (already shuffled) - NO RATE LIMIT for cached responses
             return existing.get_shuffled_view()
+        
+        # Check rate limit ONLY for new LLM generations (after deduplication check)
+        check_generation_rate_limit(request.session_id, client_ip)
         
         # Get both assistants
         assistant_a = await get_assistant("kicampus-v1")
