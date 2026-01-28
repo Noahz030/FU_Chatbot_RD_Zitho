@@ -273,12 +273,33 @@ def index():
                 
                 const votedData = await votedResp.json();
                 votedSet = new Set((votedData.comparison_ids || []).map(String));
+                votedInSubset = votedSet.size;  // Anzahl der bereits gevoteten in dieser Session
+                
+                // WICHTIG: Lade Subset-Informationen SOFORT um totalInSubset zu setzen
+                // Damit render() korrekt Completion erkennen kann
+                const subsetResp = await fetch(API + '/arena/questions-for-subset/' + assignedSubset, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' }
+                });
+                
+                if (subsetResp.ok) {
+                    const subsetData = await subsetResp.json();
+                    cachedSubsetQuestions = subsetData.questions;
+                    totalInSubset = subsetData.total_questions;
+                    initQuestionOrder(cachedSubsetQuestions);
+                } else {
+                    totalInSubset = 0;
+                }
                 
                 // Initialize comparisons array (wird durch on-demand gefüllt)
                 comparisons = [];
-                totalInSubset = 0;
-                votedInSubset = votedSet.size;  // Anzahl der bereits gevoteten in dieser Session
-                cachedSubsetQuestions = null; // reset cache on new load
+                
+                // Prüfe ob Subset bereits abgeschlossen ist
+                if (votedInSubset >= totalInSubset && totalInSubset > 0) {
+                    // Zeige Completion direkt, ohne zu generieren
+                    render();
+                    return;
+                }
                 
                 // Generiere erste Comparison on-demand
                 await generateOnDemandComparison();
