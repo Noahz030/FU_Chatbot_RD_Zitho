@@ -604,6 +604,9 @@ async def generate_comparison(
     WICHTIG: Validiert, dass die Frage zur zugeordneten Subset des Users gehört.
     Implementiert Rate-Limiting: max 1 Anfrage pro 5 Sekunden pro Session+IP.
     
+    DEDUPLIZIERUNG: Prüft ob für diese Frage + Subset bereits ein Comparison existiert.
+    Falls ja, wird das existierende zurückgegeben statt erneut zu generieren.
+    
     Dies ermöglicht pro-User Generierung mit Varianz in den Antworten,
     statt vorab fest geseete Vergleiche zu nutzen.
     
@@ -639,6 +642,18 @@ async def generate_comparison(
                     status_code=400,
                     detail=f"Question '{request.question}' does not belong to subset {request.subset_id}"
                 )
+        
+        # DEDUPLIZIERUNG: Prüfe ob bereits ein Comparison für diese Frage + Subset existiert
+        all_comparisons = default_storage.get_all_comparisons()
+        existing = next(
+            (c for c in all_comparisons 
+             if c.question == request.question and c.subset_id == request.subset_id),
+            None
+        )
+        
+        if existing:
+            # Return existing comparison (already shuffled)
+            return existing.get_shuffled_view()
         
         # Get both assistants
         assistant_a = await get_assistant("kicampus-v1")
