@@ -6,6 +6,7 @@ Inkludiert Arena Voting System für Benchmarking.
 import asyncio
 import json
 import os
+import random
 import secrets
 import time
 import uuid
@@ -851,11 +852,18 @@ def get_all_comparisons(subset: Optional[int] = None, auth: bool = Depends(verif
 
 
 @app.get("/arena/assign-subset")
-def assign_subset(auth: bool = Depends(verify_arena_key)):
+def assign_subset(
+    randomize: bool = Query(False, description="Randomize subset assignment (LOCAL only)"),
+    auth: bool = Depends(verify_arena_key),
+):
     """
     Weist einen Subset (1-4) per Round-Robin-Verfahren zu.
     Basiert auf der Anzahl der bisherigen Votes pro Subset.
     """
+    if os.getenv("ENVIRONMENT", "LOCAL") != "PRODUCTION" and randomize:
+        subset_id = random.choice([1, 2, 3, 4])
+        return {"subset_id": subset_id}
+
     subset_id = default_storage.assign_subset_round_robin()
     return {"subset_id": subset_id}
 

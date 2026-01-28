@@ -232,7 +232,7 @@ def index():
             assignedSubset = getAssignedSubset();
             if (assignedSubset === null) {
                 try {
-                    const resp = await fetch(API + '/arena/assign-subset');
+                    const resp = await fetch(API + '/arena/assign-subset?randomize=true');
                     const data = await resp.json();
                     setAssignedSubset(data.subset_id);
                     console.log('Assigned subset:', data.subset_id);
