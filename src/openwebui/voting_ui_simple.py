@@ -228,11 +228,21 @@ def index():
             assignedSubset = subset;
         }
 
+        function shouldRandomizeSubsets() {
+            // Enable via URL param: ?randomize_subsets=1
+            const params = new URLSearchParams(window.location.search);
+            return params.get('randomize_subsets') === '1';
+        }
+
         async function assignSubsetIfNeeded() {
             assignedSubset = getAssignedSubset();
             if (assignedSubset === null) {
                 try {
-                    const resp = await fetch(API + '/arena/assign-subset?randomize=true');
+                    const randomize = shouldRandomizeSubsets();
+                    const url = randomize
+                        ? (API + '/arena/assign-subset?randomize=true')
+                        : (API + '/arena/assign-subset');
+                    const resp = await fetch(url);
                     const data = await resp.json();
                     setAssignedSubset(data.subset_id);
                     console.log('Assigned subset:', data.subset_id);
