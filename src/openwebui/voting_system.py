@@ -7,6 +7,7 @@ Speichert Vergleiche zwischen kicampus-original und kicampus-improved.
 import json
 import os
 import hashlib
+import random
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Literal
@@ -176,7 +177,8 @@ class VotingStorage:
         self.save_comparison(comparison)
     
     def assign_subset_round_robin(self) -> int:
-        """Weist ein Subset zu basierend auf Vote-Counts (Round-Robin für faire Verteilung)."""
+        """Weist ein Subset zu basierend auf Vote-Counts (Round-Robin für faire Verteilung).
+        Wenn mehrere Subsets gleich viele Votes haben, wird zufällig eines gewählt."""
         comparisons = self.load_all_comparisons()
         
         # Zähle Votes pro Subset
@@ -185,8 +187,12 @@ class VotingStorage:
             if c.subset_id and c.vote:
                 subset_votes[c.subset_id] = subset_votes.get(c.subset_id, 0) + 1
         
-        # Weise Subset mit wenigsten Votes zu
-        return min(subset_votes, key=subset_votes.get)
+        # Finde Subsets mit wenigsten Votes
+        min_votes = min(subset_votes.values())
+        candidates = [s for s, v in subset_votes.items() if v == min_votes]
+        
+        # Bei Ties: zufällig wählen statt immer min()
+        return random.choice(candidates)
     
     def assign_subsets_to_unassigned(self) -> int:
         """Weist unzugewiesenen Vergleichen Round-Robin Subsets zu. Returns Anzahl zugewiesener."""
