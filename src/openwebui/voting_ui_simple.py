@@ -585,8 +585,17 @@ def index():
         function render() {
             const container = document.getElementById('container');
 
+            // Debug: Log current state
+            console.log('render() called:', {
+                votedInSubset,
+                totalInSubset,
+                comparisonsLength: comparisons?.length,
+                completionCheck: votedInSubset >= totalInSubset && totalInSubset > 0
+            });
+
             // Check completion FIRST (before checking if comparisons are loaded)
             if (votedInSubset >= totalInSubset && totalInSubset > 0) {
+                console.log('✅ Showing completion screen');
                 container.innerHTML = `
                     <div class="completion" style="background: white; padding: 40px; border-radius: 8px; text-align: center;">
                         <h2 style="font-size: 32px; margin: 0 0 15px;">✅ Subset abgeschlossen!</h2>
@@ -603,6 +612,7 @@ def index():
             }
 
             if (!comparisons || comparisons.length === 0) {
+                console.log('⚠️ No comparisons loaded');
                 container.innerHTML = '<div class="error">⚠️ Keine Vergleiche geladen</div>';
                 return;
             }
