@@ -652,6 +652,8 @@ def index():
                         <button onclick="selectVote('B')" id="btn-B">B ist besser</button>
                         <button onclick="selectVote('both_bad')" id="btn-both_bad">Beide schlecht</button>
                     </div>
+                    <!-- Honeypot field for bot detection (hidden from users) -->
+                    <input type="text" id="honeypot_website" name="website" style="display:none; visibility:hidden; position:absolute; left:-9999px; top:-9999px;" />
                     <button class="submit" onclick="submitVote('${comp.id}', ${comp.subset_id || 'assignedSubset'})">Vote abgeben</button>
                 </div>
             `;
@@ -697,6 +699,14 @@ def index():
             if (!selectedVote) {
                 alert('Bitte wähle eine Option!');
                 return;
+            }
+            
+            // Honeypot validation: if honeypot field is filled, it's a bot
+            const honeypot = document.getElementById('honeypot_website');
+            if (honeypot && honeypot.value !== '') {
+                console.warn('🤖 Bot detection: Honeypot field filled. Blocking vote.');
+                alert('❌ Verdächtige Aktivität erkannt. Deine Anfrage wurde blockiert.');
+                return;  // Don't send the vote
             }
             
             if (!csrfToken) {
