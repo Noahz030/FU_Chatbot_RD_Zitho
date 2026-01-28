@@ -641,7 +641,7 @@ async def generate_comparison(
                 )
         
         # DEDUPLIZIERUNG: Prüfe ob bereits ein Comparison für diese Frage + Subset existiert
-        all_comparisons = default_storage.get_all_comparisons()
+        all_comparisons = default_storage.load_all_comparisons()
         existing = next(
             (c for c in all_comparisons 
              if c.question == request.question and c.subset_id == request.subset_id),
