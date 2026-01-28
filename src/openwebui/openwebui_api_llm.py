@@ -10,12 +10,14 @@ import random
 import secrets
 import time
 import uuid
+import hashlib
+import logging
 from datetime import datetime
 from typing import AsyncGenerator, Literal, Optional, Any, Annotated, Dict, Tuple, List
 
-from fastapi import FastAPI, HTTPException, Depends, Header, status, Query
+from fastapi import FastAPI, HTTPException, Depends, Header, status, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.security import APIKeyHeader
 from llama_index.core.llms import ChatMessage, MessageRole
 from pydantic import BaseModel, Field
@@ -39,6 +41,31 @@ app = FastAPI(
     description="OpenWebUI-kompatible API mit Azure OpenAI Integration",
     version="1.0.0",
 )
+
+logger = logging.getLogger(__name__)
+
+# Request size limit (bytes)
+MAX_REQUEST_BODY_BYTES = int(os.getenv("MAX_REQUEST_BODY_BYTES", "10240"))  # 10KB default
+
+@app.middleware("http")
+async def enforce_request_size_limit(request: Request, call_next):
+    if request.method in {"POST", "PUT", "PATCH"}:
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            try:
+                if int(content_length) > MAX_REQUEST_BODY_BYTES:
+                    return JSONResponse(status_code=413, content={"detail": "Payload too large"})
+            except ValueError:
+                return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length header"})
+
+        body = await request.body()
+        if len(body) > MAX_REQUEST_BODY_BYTES:
+            return JSONResponse(status_code=413, content={"detail": "Payload too large"})
+
+        # Preserve body for downstream handlers
+        request._body = body
+
+    return await call_next(request)
 
 # CORS mit konfigurierbaren Origins
 allowed_origins = os.getenv("CORS_ORIGINS", "*").split(",")
@@ -195,6 +222,78 @@ _csrf_token_cache: dict[str, str] = {}
 # Lazy-Loading der Assistenten via ModelRegistry
 # Assistants are loaded on-demand to avoid failures during startup
 _assistants_cache: dict[str, Any] = {}
+
+# Validation bounds
+MAX_QUESTION_LEN = 500
+MAX_COMMENT_LEN = 500
+MAX_ID_LEN = 64
+MAX_TOKEN_LEN = 128
+
+# Audit logging
+AUDIT_LOG_FILE = Path(__file__).parent / "data" / "arena_audit.jsonl"
+
+
+def _normalize_ip(ip: Optional[str]) -> Optional[str]:
+    if not ip:
+        return None
+    ip = ip.strip()
+    if ip.startswith("[") and "]" in ip:
+        ip = ip[1:ip.index("]")]
+    if ":" in ip and ip.count(":") == 1:
+        ip = ip.split(":")[0]
+    return ip
+
+
+def get_client_ip(request: Request) -> Optional[str]:
+    """Resolve client IP with proxy-awareness."""
+    if os.getenv("ENVIRONMENT", "LOCAL") == "PRODUCTION":
+        xff = request.headers.get("x-forwarded-for")
+        if xff:
+            return _normalize_ip(xff.split(",")[0])
+        xri = request.headers.get("x-real-ip")
+        if xri:
+            return _normalize_ip(xri)
+    if request.client:
+        return _normalize_ip(request.client.host)
+    return None
+
+
+def _hash_ip(ip: Optional[str]) -> Optional[str]:
+    if not ip:
+        return None
+    salt = os.getenv("AUDIT_IP_SALT", "")
+    digest = hashlib.sha256(f"{salt}{ip}".encode("utf-8")).hexdigest()
+    return digest[:12]
+
+
+def write_audit_event(
+    event_type: str,
+    *,
+    session_id: Optional[str] = None,
+    comparison_id: Optional[str] = None,
+    subset_id: Optional[int] = None,
+    vote: Optional[str] = None,
+    request: Optional[Request] = None,
+    detail: Optional[str] = None,
+) -> None:
+    try:
+        AUDIT_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        client_ip = get_client_ip(request) if request else None
+        event = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "event": event_type,
+            "session_id": session_id,
+            "comparison_id": comparison_id,
+            "subset_id": subset_id,
+            "vote": vote,
+            "client_ip_hash": _hash_ip(client_ip),
+            "user_agent": request.headers.get("user-agent") if request else None,
+            "detail": detail,
+        }
+        with AUDIT_LOG_FILE.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(event, ensure_ascii=False) + "\n")
+    except Exception as e:
+        logger.warning("Failed to write audit log: %s", e)
 
 
 async def get_assistant(model_id: str) -> Any:
@@ -568,35 +667,35 @@ def get_questions_for_subset_endpoint(subset_id: int):
 
 class SaveComparisonRequest(BaseModel):
     """Request body für das Speichern eines Arena-Vergleichs."""
-    question: str
-    model_a: str
-    answer_a: str
-    model_b: str
-    answer_b: str
+    question: str = Field(min_length=1, max_length=MAX_QUESTION_LEN)
+    model_a: str = Field(min_length=1, max_length=MAX_ID_LEN)
+    answer_a: str = Field(min_length=1)
+    model_b: str = Field(min_length=1, max_length=MAX_ID_LEN)
+    answer_b: str = Field(min_length=1)
 
 
 class VoteRequest(BaseModel):
     """Request body für das Voten."""
-    comparison_id: str
+    comparison_id: str = Field(min_length=1, max_length=MAX_ID_LEN)
     vote: Literal["A", "B", "tie", "both_bad"]
-    comment: Optional[str] = None
-    subset_id: Optional[int] = None
-    csrf_token: Optional[str] = None  # CSRF token for vote submission protection
+    comment: Optional[str] = Field(default=None, max_length=MAX_COMMENT_LEN)
+    subset_id: Optional[int] = Field(default=None, ge=1, le=4)
+    csrf_token: Optional[str] = Field(default=None, max_length=MAX_TOKEN_LEN)  # CSRF token for vote submission protection
 
 
 class GenerateComparisonRequest(BaseModel):
     """Request to generate answers on-demand for a question."""
-    question: str = Field(description="Die zu stellende Frage")
-    session_id: Optional[str] = Field(default=None, description="Optional Session ID for tracking")
-    user_id: Optional[str] = Field(default=None, description="Optional User ID for tracking")
-    subset_id: Optional[int] = Field(default=None, description="Optional subset assignment")
+    question: str = Field(min_length=1, max_length=MAX_QUESTION_LEN, description="Die zu stellende Frage")
+    session_id: Optional[str] = Field(default=None, max_length=MAX_ID_LEN, description="Optional Session ID for tracking")
+    user_id: Optional[str] = Field(default=None, max_length=MAX_ID_LEN, description="Optional User ID for tracking")
+    subset_id: Optional[int] = Field(default=None, ge=1, le=4, description="Optional subset assignment")
 
 
 @app.post("/arena/generate")
 async def generate_comparison(
     request: GenerateComparisonRequest,
     auth: bool = Depends(verify_arena_key),
-    x_forwarded_for: Optional[str] = Header(None),
+    http_request: Request,
 ):
     """
     Generiert on-demand Antworten von beiden Modellen für eine Frage.
@@ -625,17 +724,22 @@ async def generate_comparison(
         503: Wenn ein Modell nicht verfügbar ist
     """
     try:
-        # Extract client IP from X-Forwarded-For (proxy) or use "unknown"
-        client_ip = (x_forwarded_for.split(",")[0].strip() if x_forwarded_for else "unknown")
+        # Extract client IP
+        client_ip = get_client_ip(http_request)
         
         # Validate that question belongs to the user's subset
         if request.subset_id is not None:
             valid_questions = get_questions_for_subset(request.subset_id)
             if request.question not in valid_questions:
-                import logging
-                logger = logging.getLogger(__name__)
                 logger.error(f"Question validation failed: '{request.question}' not in subset {request.subset_id}")
                 logger.error(f"Valid questions for subset {request.subset_id}: {valid_questions}")
+                write_audit_event(
+                    "invalid_question_subset",
+                    session_id=request.session_id,
+                    subset_id=request.subset_id,
+                    request=http_request,
+                    detail="question_not_in_subset",
+                )
                 raise HTTPException(
                     status_code=400,
                     detail=f"Question '{request.question}' does not belong to subset {request.subset_id}"
@@ -654,7 +758,17 @@ async def generate_comparison(
             return existing.get_shuffled_view()
         
         # Check rate limit ONLY for new LLM generations (after deduplication check)
-        check_generation_rate_limit(request.session_id, client_ip)
+        try:
+            check_generation_rate_limit(request.session_id or "unknown", client_ip)
+        except HTTPException as e:
+            if e.status_code == 429:
+                write_audit_event(
+                    "rate_limit_generate",
+                    session_id=request.session_id,
+                    request=http_request,
+                    detail=e.detail if isinstance(e.detail, str) else None,
+                )
+            raise
         
         # Get both assistants
         assistant_a = await get_assistant("kicampus-v1")
@@ -691,6 +805,13 @@ async def generate_comparison(
         
         # Save to global JSONL
         default_storage.save_comparison(comparison)
+
+        write_audit_event(
+            "generate_success",
+            session_id=request.session_id,
+            subset_id=request.subset_id,
+            request=http_request,
+        )
         
         # Return shuffled view for blind testing
         return comparison.get_shuffled_view()
@@ -758,12 +879,14 @@ def submit_vote(
     request: VoteRequest,
     auth: bool = Depends(verify_arena_key),
     x_session_id: Optional[str] = Header(default=None),
+    http_request: Request,
 ):
     """
     Submitted einen Vote für einen existierenden Vergleich.
     Validiert CSRF-Token zur Verhinderung von Cross-Site Vote Submission.
     """
     if not x_session_id:
+        write_audit_event("vote_rejected", request=http_request, detail="missing_session_id")
         raise HTTPException(status_code=400, detail="X-Session-ID header required")
 
     # Prevent duplicate vote on the same comparison by the same session
@@ -780,6 +903,13 @@ def submit_vote(
                 except Exception:
                     continue
                 if obj.get("session_id") == x_session_id and obj.get("comparison_id") == request.comparison_id:
+                    write_audit_event(
+                        "vote_rejected",
+                        session_id=x_session_id,
+                        comparison_id=request.comparison_id,
+                        request=http_request,
+                        detail="duplicate_vote",
+                    )
                     raise HTTPException(
                         status_code=403,
                         detail="Diese Session hat diesen Vergleich bereits gevotet."
@@ -787,6 +917,13 @@ def submit_vote(
 
     # Validate CSRF token (unless API key is provided, which bypasses CSRF)
     if request.csrf_token and not validate_csrf_token(x_session_id, request.csrf_token):
+        write_audit_event(
+            "csrf_invalid",
+            session_id=x_session_id,
+            comparison_id=request.comparison_id,
+            request=http_request,
+            detail="csrf_token_invalid",
+        )
         raise HTTPException(
             status_code=403,
             detail="Invalid or missing CSRF token. This vote cannot be processed for security reasons."
@@ -815,10 +952,26 @@ def submit_vote(
     )
     
     if not success:
+        write_audit_event(
+            "vote_rejected",
+            session_id=x_session_id,
+            comparison_id=request.comparison_id,
+            request=http_request,
+            detail="comparison_not_found",
+        )
         raise HTTPException(status_code=404, detail="Comparison ID not found")
     
     # 3) Rotate CSRF token after successful vote to prevent token reuse
     new_token = rotate_csrf_token(x_session_id)
+
+    write_audit_event(
+        "vote_submitted",
+        session_id=x_session_id,
+        comparison_id=request.comparison_id,
+        subset_id=request.subset_id,
+        vote=request.vote,
+        request=http_request,
+    )
     
     return {
         "success": True,

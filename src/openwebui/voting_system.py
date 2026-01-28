@@ -139,6 +139,11 @@ class VotingStorage:
         Returns:
             True wenn erfolgreich, False wenn ID nicht gefunden
         """
+        if not comparison_id or len(comparison_id) > 64:
+            return False
+        if comment is not None and len(comment) > 500:
+            comment = comment[:500]
+
         comparisons = self.load_all_comparisons()
         found = False
         
