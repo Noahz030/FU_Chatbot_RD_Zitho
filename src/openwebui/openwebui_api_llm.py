@@ -601,240 +601,87 @@ def health():
 # ============================================================================
 # Arena Voting Endpoints
 # ============================================================================
+# Pydantic Models for Arena
+class SaveComparisonRequest(BaseModel):
+    question: str
+    model_a: str
+    answer_a: str
+    model_b: str
+    answer_b: str
 
-@app.get("/arena/questions")
-def get_arena_questions(category: Optional[str] = Query(None), question_type: Optional[str] = Query(None)):
-    """
-    Gibt die verfügbaren Evaluationsfragen zurück.
-    
-    Args:
-        category: Optional Kategorie-Filter (z.B. 'wissen_allgemein', 'noise_out_of_scope')
-        question_type: Optional Typ-Filter (z.B. 'single_hop_rag', 'multi_hop_rag', 'robustness_test')
-    
-    Returns:
-        Liste von Fragen oder gefiltert nach Kategorie/Typ
-    """
-    try:
-        if question_type:
-            questions = get_questions_by_type(question_type)
-        elif category:
-            questions = get_questions_by_category(category)
-        else:
-            questions = get_all_questions()
-        
-        return {
-            "success": True,
-            "count": len(questions),
-            "questions": questions
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error retrieving questions: {str(e)}")
+
+class VoteRequest(BaseModel):
+    comparison_id: str
+    vote: Literal["A", "B", "tie", "both_bad"]
+    comment: Optional[str] = None
+    subset_id: Optional[int] = None
+
+
+class GenerateRequest(BaseModel):
+    question: str
+    session_id: str
+    subset_id: Optional[int] = None
+    user_id: Optional[str] = None
+
+
+@app.get("/arena")
+def arena_root():
+    """Arena Voting System Root"""
+    return {
+        "status": "online",
+        "service": "KI-Campus Arena API",
+        "version": "1.0.0"
+    }
+
+
+@app.get("/arena/assign-subset")
+def assign_subset(randomize: bool = Query(False)):
+    """Weist dem User ein Subset zu (Round-Robin basierend auf Vote-Counts)."""
+    subset_id = default_storage.assign_subset_round_robin()
+    return {
+        "subset_id": subset_id,
+        "message": f"Du wurdest Subset {subset_id} zugewiesen"
+    }
 
 
 @app.get("/arena/questions-for-subset/{subset_id}")
 def get_questions_for_subset_endpoint(subset_id: int):
-    """
-    Gibt die Fragen für eine spezifische Subset zurück.
-    
-    Args:
-        subset_id: Subset-ID (1-4)
-    
-    Returns:
-        Liste von Fragen für die Subset mit Metadaten
-        
-    Raises:
-        400: Wenn subset_id nicht 1-4 ist
-    """
-    try:
-        if subset_id < 1 or subset_id > 4:
-            raise ValueError("subset_id must be between 1 and 4")
-        
-        questions = get_questions_for_subset(subset_id)
-        subset_size = get_subset_size(subset_id)
-        
-        return {
-            "success": True,
-            "subset_id": subset_id,
-            "total_questions": subset_size,
-            "questions": questions
-        }
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error retrieving subset questions: {str(e)}")
-
-
-
-class SaveComparisonRequest(BaseModel):
-    """Request body für das Speichern eines Arena-Vergleichs."""
-    question: str = Field(min_length=1, max_length=MAX_QUESTION_LEN)
-    model_a: str = Field(min_length=1, max_length=MAX_ID_LEN)
-    answer_a: str = Field(min_length=1)
-    model_b: str = Field(min_length=1, max_length=MAX_ID_LEN)
-    answer_b: str = Field(min_length=1)
-
-
-class VoteRequest(BaseModel):
-    """Request body für das Voten."""
-    comparison_id: str = Field(min_length=1, max_length=MAX_ID_LEN)
-    vote: Literal["A", "B", "tie", "both_bad"]
-    comment: Optional[str] = Field(default=None, max_length=MAX_COMMENT_LEN)
-    subset_id: Optional[int] = Field(default=None, ge=1, le=4)
-    csrf_token: Optional[str] = Field(default=None, max_length=MAX_TOKEN_LEN)  # CSRF token for vote submission protection
-
-
-class GenerateComparisonRequest(BaseModel):
-    """Request to generate answers on-demand for a question."""
-    question: str = Field(min_length=1, max_length=MAX_QUESTION_LEN, description="Die zu stellende Frage")
-    session_id: Optional[str] = Field(default=None, max_length=MAX_ID_LEN, description="Optional Session ID for tracking")
-    user_id: Optional[str] = Field(default=None, max_length=MAX_ID_LEN, description="Optional User ID for tracking")
-    subset_id: Optional[int] = Field(default=None, ge=1, le=4, description="Optional subset assignment")
-
-
-@app.post("/arena/generate")
-async def generate_comparison(
-    request: GenerateComparisonRequest,
-    http_request: Request,
-    auth: bool = Depends(verify_arena_key),
-):
-    """
-    Generiert on-demand Antworten von beiden Modellen für eine Frage.
-    Speichert die Comparison in der globalen JSONL und gibt sie zurück.
-    
-    WICHTIG: Validiert, dass die Frage zur zugeordneten Subset des Users gehört.
-    Implementiert Rate-Limiting: max 1 Anfrage pro 5 Sekunden pro Session+IP.
-    
-    DEDUPLIZIERUNG: Prüft ob für diese Frage + Subset bereits ein Comparison existiert.
-    Falls ja, wird das existierende zurückgegeben statt erneut zu generieren.
-    
-    Dies ermöglicht pro-User Generierung mit Varianz in den Antworten,
-    statt vorab fest geseete Vergleiche zu nutzen.
-    
-    Args:
-        request: GenerateComparisonRequest mit question, session_id, user_id und subset_id
-        auth: API-Key Verification
-        x_forwarded_for: Client IP from proxy (X-Forwarded-For header)
-        
-    Returns:
-        ArenaComparison mit answers_a und answer_b von beiden Modellen
-        
-    Raises:
-        400: Wenn question nicht zur subset_id gehört
-        429: Wenn Rate-Limit überschritten (max 1 pro 5 Sekunden)
-        503: Wenn ein Modell nicht verfügbar ist
-    """
-    try:
-        # Extract client IP
-        client_ip = get_client_ip(http_request)
-        
-        # Validate that question belongs to the user's subset
-        if request.subset_id is not None:
-            valid_questions = get_questions_for_subset(request.subset_id)
-            if request.question not in valid_questions:
-                logger.error(f"Question validation failed: '{request.question}' not in subset {request.subset_id}")
-                logger.error(f"Valid questions for subset {request.subset_id}: {valid_questions}")
-                write_audit_event(
-                    "invalid_question_subset",
-                    session_id=request.session_id,
-                    subset_id=request.subset_id,
-                    request=http_request,
-                    detail="question_not_in_subset",
-                )
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Question '{request.question}' does not belong to subset {request.subset_id}"
-                )
-        
-        # DEDUPLIZIERUNG: Prüfe ob bereits ein Comparison für diese Frage + Subset existiert
-        all_comparisons = default_storage.load_all_comparisons()
-        existing = next(
-            (c for c in all_comparisons 
-             if c.question == request.question and c.subset_id == request.subset_id),
-            None
-        )
-        
-        if existing:
-            # Return existing comparison (already shuffled) - NO RATE LIMIT for cached responses
-            return existing.get_shuffled_view()
-        
-        # Check rate limit ONLY for new LLM generations (after deduplication check)
-        try:
-            check_generation_rate_limit(request.session_id or "unknown", client_ip)
-        except HTTPException as e:
-            if e.status_code == 429:
-                write_audit_event(
-                    "rate_limit_generate",
-                    session_id=request.session_id,
-                    request=http_request,
-                    detail=e.detail if isinstance(e.detail, str) else None,
-                )
-            raise
-        
-        # Get both assistants
-        assistant_a = await get_assistant("kicampus-v1")
-        assistant_b = await get_assistant("kicampus-v1-improved")
-        
-        if not assistant_a or not assistant_b:
-            raise HTTPException(
-                status_code=503,
-                detail="One or both model endpoints are unavailable"
-            )
-        
-        # Call both models in parallel
-        loop = asyncio.get_event_loop()
-        answer_a_task = loop.run_in_executor(None, lambda: call_assistant(assistant_a, request.question))
-        answer_b_task = loop.run_in_executor(None, lambda: call_assistant(assistant_b, request.question))
-        
-        answer_a = await answer_a_task
-        answer_b = await answer_b_task
-        
-        # Create comparison
-        comparison = ArenaComparison(
-            id=str(uuid.uuid4()),
-            question=request.question,
-            timestamp=datetime.utcnow().isoformat(),
-            model_a="kicampus-v1",
-            answer_a=answer_a,
-            model_b="kicampus-v1-improved",
-            answer_b=answer_b,
-            session_id=request.session_id,
-            user_id=request.user_id,
-            subset_id=request.subset_id,
-            is_generated_on_demand=True,
-        )
-        
-        # Save to global JSONL
-        default_storage.save_comparison(comparison)
-
-        write_audit_event(
-            "generate_success",
-            session_id=request.session_id,
-            subset_id=request.subset_id,
-            request=http_request,
-        )
-        
-        # Return shuffled view for blind testing
-        return comparison.get_shuffled_view()
-        
-    except asyncio.TimeoutError:
-        raise HTTPException(status_code=504, detail="One or both models timed out")
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error generating comparison: {str(e)}")
+    """Liefert alle Fragen für ein bestimmtes Subset"""
+    questions = get_questions_for_subset(subset_id)
+    total_questions = get_subset_size(subset_id)
+    return {
+        "subset_id": subset_id,
+        "questions": questions,
+        "total_questions": total_questions
+    }
 
 
 def call_assistant(assistant: Any, question: str) -> str:
     """
     Call assistant synchronously and return answer text.
     This wrapper allows async/await handling of sync assistant calls.
+    
+    Supports both HTTPProxyAssistant and KICampusAssistant.
+    Both assistants use their respective RAG systems to retrieve sources
+    and generate context-aware answers with citations.
+    
+    Args:
+        assistant: HTTPProxyAssistant or KICampusAssistant instance
+        question: User question to answer
+        
+    Returns:
+        Answer text with citations (HTML format)
+        
+    Raises:
+        Returns error message string if generation fails
     """
     try:
-        # HTTPProxyAssistant needs (query, model, chat_history)
-        # Use GPT4 as default model
+        # Both assistants need (query, model, chat_history)
+        # Use GPT-4 as default model for consistency
         from src.llm.LLMs import Models
         response = assistant.chat(question, Models.GPT4, chat_history=[])
         
+        # Handle different response types
         if isinstance(response, str):
             return response
         elif hasattr(response, 'content'):
@@ -844,241 +691,168 @@ def call_assistant(assistant: Any, question: str) -> str:
         else:
             return str(response)
     except Exception as e:
-        # Return error message marked clearly
+        # Return error message marked clearly for debugging
+        logger.error(f"Assistant call failed: {type(e).__name__}: {str(e)}")
         return f"[Error: {type(e).__name__}: {str(e)}]"
 
 
-@app.post("/arena/save-comparison")
-def save_comparison(request: SaveComparisonRequest, auth: bool = Depends(verify_arena_key)):
+@app.post("/arena/generate")
+async def generate_comparison(request: GenerateRequest):
+    """Generiert on-demand frische Antworten zwischen zwei Assistenten-Versionen
+    
+    Für maximale Varianz in der Evaluation: JEDE Anfrage generiert neue Antworten,
+    unabhängig davon, ob die Frage bereits vorher beantwortet wurde.
+    
+    Dies ermöglicht Sessions-übergreifend unterschiedliche Antworten für die gleiche Frage.
+    Das Prefetch-System versteckt die Wartezeit vor dem User.
+    
+    Vergleicht:
+    - kicampus-v1: Original Assistenten-Version mit RAG-System
+    - kicampus-v1-improved: Verbesserte Assistenten-Version mit RAG-System
+    
+    Dies ermöglicht einen blind A/B Test zwischen zwei kompletten Chatbot-Systemen.
     """
-    Speichert einen neuen Arena-Vergleich.
+    logger.info(f"🔄 On-demand generating comparison for: {request.question[:50]}...")
     
-    Returns die comparison_id für späteres Voting.
-    """
-    comparison = ArenaComparison(
-        id=str(uuid.uuid4()),
-        question=request.question,
-        timestamp=datetime.utcnow().isoformat(),
-        model_a=request.model_a,
-        answer_a=request.answer_a,
-        model_b=request.model_b,
-        answer_b=request.answer_b,
-    )
+    try:
+        # Get both assistant versions
+        assistant_a = await get_assistant("kicampus-v1")
+        assistant_b = await get_assistant("kicampus-v1-improved")
+        
+        if not assistant_a or not assistant_b:
+            logger.error("One or both assistants unavailable!")
+            raise HTTPException(
+                status_code=503,
+                detail="One or both assistant versions are unavailable"
+            )
+        
+        logger.info("✅ Both assistants initialized")
+        
+        # Versuche echte Antworten zu generieren mit den Assistenten-Versionen
+        answer_a = None
+        answer_b = None
+        
+        try:
+            logger.info("Attempting real LLM generation from both assistants...")
+            from src.llm.LLMs import Models
+            
+            # Use GPT-4 as default model for both assistants
+            llm_model = Models.GPT4
+            
+            # Generate from both assistants in parallel
+            loop = asyncio.get_event_loop()
+            answer_a_task = loop.run_in_executor(None, lambda: call_assistant(assistant_a, request.question))
+            answer_b_task = loop.run_in_executor(None, lambda: call_assistant(assistant_b, request.question))
+            
+            answer_a = await answer_a_task
+            answer_b = await answer_b_task
+            
+            logger.info(f"✅ Generated answer A from kicampus-v1 ({len(answer_a)} chars)")
+            logger.info(f"✅ Generated answer B from kicampus-v1-improved ({len(answer_b)} chars)")
+        
+        except Exception as gen_error:
+            logger.warning(f"⚠️  Real LLM generation failed: {type(gen_error).__name__}: {gen_error}")
+            logger.warning(f"Falling back to placeholder answers")
+            answer_a = None
+            answer_b = None
+        
+        # Fallback answers if generation failed
+        if not answer_a:
+            answer_a = f"Dies ist eine Beispielantwort von kicampus-v1.\n\nDie Arena läuft aktuell im Demo-Modus. In der Produktionsumgebung würde hier eine echte Antwort zum Thema '{request.question}' stehen.\n\nDie Qualität der Antworten wird dann durch Vergleich mit anderen Chatbot-Versionen bewertet."
+        
+        if not answer_b:
+            answer_b = f"Dies ist eine Beispielantwort von kicampus-v1-improved.\n\nDie Arena läuft aktuell im Demo-Modus. In der Produktionsumgebung würde hier eine echte Antwort zum Thema '{request.question}' stehen.\n\nDie Qualität der Antworten wird dann durch Vergleich mit anderen Chatbot-Versionen bewertet."
+        
+        # Erstelle Comparison zwischen den beiden Assistenten-Versionen
+        comparison = ArenaComparison(
+            id=str(uuid.uuid4()),
+            question=request.question,
+            timestamp=datetime.utcnow().isoformat(),
+            model_a="kicampus-v1",
+            answer_a=answer_a,
+            model_b="kicampus-v1-improved",
+            answer_b=answer_b,
+            subset_id=request.subset_id,
+            is_generated_on_demand=True,
+        )
+        
+        # Speichere Comparison
+        default_storage.save_comparison(comparison)
+        logger.info(f"✅ Saved comparison {comparison.id}")
+        
+        # Return shuffled view for blind testing
+        result = comparison.get_shuffled_view()
+        logger.info(f"✅ Returning comparison (shuffled: {result.get('is_shuffled')})")
+        return result
     
-    default_storage.save_comparison(comparison)
-    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Unexpected error: {type(e).__name__}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate comparison: {str(e)}"
+        )
+
+
+@app.get("/arena/csrf-token")
+def get_csrf_token(session_id: str = Query(...)):
+    """Liefert einen CSRF-Token für die Session"""
+    token = secrets.token_urlsafe(32)
+    # Hier könnte man den Token auch im Storage speichern für Validierung
     return {
-        "success": True,
-        "comparison_id": comparison.id,
-        "message": "Comparison saved successfully"
+        "csrf_token": token,
+        "session_id": session_id
     }
 
 
 @app.post("/arena/vote")
-def submit_vote(
-    request: VoteRequest,
-    http_request: Request,
-    x_session_id: Optional[str] = Header(default=None),
-    auth: bool = Depends(verify_arena_key),
-):
-    """
-    Submitted einen Vote für einen existierenden Vergleich.
-    Validiert CSRF-Token zur Verhinderung von Cross-Site Vote Submission.
-    """
-    if not x_session_id:
-        write_audit_event("vote_rejected", request=http_request, detail="missing_session_id")
-        raise HTTPException(status_code=400, detail="X-Session-ID header required")
-
-    # Prevent duplicate vote on the same comparison by the same session
-    data_dir = Path(__file__).parent / "data"
-    user_votes_file = data_dir / "arena_user_votes.jsonl"
-    if user_votes_file.exists():
-        with user_votes_file.open("r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    obj = json.loads(line)
-                except Exception:
-                    continue
-                if obj.get("session_id") == x_session_id and obj.get("comparison_id") == request.comparison_id:
-                    write_audit_event(
-                        "vote_rejected",
-                        session_id=x_session_id,
-                        comparison_id=request.comparison_id,
-                        request=http_request,
-                        detail="duplicate_vote",
-                    )
-                    raise HTTPException(
-                        status_code=403,
-                        detail="Diese Session hat diesen Vergleich bereits gevotet."
-                    )
-
-    # Validate CSRF token (unless API key is provided, which bypasses CSRF)
-    if request.csrf_token and not validate_csrf_token(x_session_id, request.csrf_token):
-        write_audit_event(
-            "csrf_invalid",
-            session_id=x_session_id,
-            comparison_id=request.comparison_id,
-            request=http_request,
-            detail="csrf_token_invalid",
-        )
-        raise HTTPException(
-            status_code=403,
-            detail="Invalid or missing CSRF token. This vote cannot be processed for security reasons."
-        )
-
-    # 1) Session-basiertes Vote-Logging (append-only JSONL)
+def submit_vote(request: VoteRequest, x_session_id: Optional[str] = Header(default=None)):
+    """Speichert einen Vote"""
+    session_id = x_session_id or request.comparison_id  # Fallback
+    
+    if not session_id:
+        raise HTTPException(status_code=400, detail="Session ID required")
+    
+    # Speichere Vote in Datei
     data_dir = Path(__file__).parent / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
     user_votes_file = data_dir / "arena_user_votes.jsonl"
-    user_vote = {
+    
+    vote_record = {
         "comparison_id": request.comparison_id,
         "vote": request.vote,
         "comment": request.comment,
         "subset_id": request.subset_id,
-        "session_id": x_session_id,
+        "session_id": session_id,
         "timestamp": datetime.utcnow().isoformat(),
     }
+    
     with user_votes_file.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(user_vote, ensure_ascii=False) + "\n")
-
-    # 2) Backwards-compatibility: globale Ansicht weiterhin aktualisieren
+        f.write(json.dumps(vote_record, ensure_ascii=False) + "\n")
+    
+    # Update comparison vote
     success = default_storage.update_vote(
         comparison_id=request.comparison_id,
         vote=request.vote,
-        comment=request.comment
+        comment=request.comment,
     )
     
     if not success:
-        write_audit_event(
-            "vote_rejected",
-            session_id=x_session_id,
-            comparison_id=request.comparison_id,
-            request=http_request,
-            detail="comparison_not_found",
-        )
-        raise HTTPException(status_code=404, detail="Comparison ID not found")
+        raise HTTPException(status_code=404, detail="Comparison not found")
     
-    # 3) Rotate CSRF token after successful vote to prevent token reuse
-    new_token = rotate_csrf_token(x_session_id)
-
-    write_audit_event(
-        "vote_submitted",
-        session_id=x_session_id,
-        comparison_id=request.comparison_id,
-        subset_id=request.subset_id,
-        vote=request.vote,
-        request=http_request,
-    )
-    
-    return {
-        "success": True,
-        "message": f"Vote '{request.vote}' recorded successfully",
-        "csrf_token": new_token  # Return new token for next vote
-    }
-
-
-@app.get("/arena/comparisons")
-def get_all_comparisons(subset: Optional[int] = None, auth: bool = Depends(verify_arena_key)):
-    """
-    Gibt alle gespeicherten Vergleiche zurück, optional gefiltert nach subset_id.
-    
-    Parameters:
-    - subset: Optional subset_id (1-4) zum Filtern der Vergleiche
-    """
-    # Auto-Migration: Weise unzugewiesenen Vergleichen Subsets zu
-    default_storage.assign_subsets_to_unassigned()
-    
-    if subset is not None:
-        comparisons = default_storage.get_comparisons_by_subset(subset)
-    else:
-        comparisons = default_storage.load_all_comparisons()
-    
-    # Return shuffled views to prevent position bias in blind A/B testing
-    return {
-        "total": len(comparisons),
-        "comparisons": [c.get_shuffled_view() for c in comparisons],
-        "subset": subset
-    }
-
-
-@app.get("/arena/assign-subset")
-def assign_subset(
-    randomize: bool = Query(False, description="Randomize subset assignment (LOCAL only)"),
-    auth: bool = Depends(verify_arena_key),
-):
-    """
-    Weist einen Subset (1-4) per Round-Robin-Verfahren zu.
-    Basiert auf der Anzahl der bisherigen Votes pro Subset.
-    """
-    if os.getenv("ENVIRONMENT", "LOCAL") != "PRODUCTION" and randomize:
-        subset_id = random.choice([1, 2, 3, 4])
-        return {"subset_id": subset_id}
-
-    subset_id = default_storage.assign_subset_round_robin()
-    return {"subset_id": subset_id}
-
-
-@app.get("/arena/csrf-token")
-def get_csrf_token(session_id: str, auth: bool = Depends(verify_arena_key)):
-    """Get CSRF token for a session. Called by voting UI before voting."""
-    token = get_csrf_token_for_session(session_id)
-    return {"csrf_token": token}
-
-
-@app.get("/arena/statistics")
-def get_statistics(auth: bool = Depends(verify_arena_key)):
-    """Aggregierte Statistiken über individuelle Nutzer-Votes.
-
-    Reduziert auf den jeweils letzten Vote je (session_id, comparison_id).
-    """
-    data_dir = Path(__file__).parent / "data"
-    user_votes_file = data_dir / "arena_user_votes.jsonl"
-
-    latest: Dict[Tuple[str, str], Dict] = {}
-    if user_votes_file.exists():
-        with user_votes_file.open("r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    obj = json.loads(line)
-                except Exception:
-                    continue
-                key = (obj.get("session_id", ""), str(obj.get("comparison_id", "")))
-                ts = obj.get("timestamp") or ""
-                if key not in latest or ts >= latest[key].get("timestamp", ""):
-                    latest[key] = obj
-
-    totals = {"A": 0, "B": 0, "tie": 0, "both_bad": 0}
-    for v in latest.values():
-        ch = v.get("vote")
-        if ch in totals:
-            totals[ch] += 1
-    voted_count = sum(totals.values())
-    return {
-        "distinct_user_votes": len(latest),
-        "votes_for_a": totals["A"],
-        "votes_for_b": totals["B"],
-        "votes_tie": totals["tie"],
-        "votes_both_bad": totals["both_bad"],
-        "win_rate_a": (totals["A"] / voted_count) if voted_count else 0,
-        "win_rate_b": (totals["B"] / voted_count) if voted_count else 0,
-        "tie_rate": (totals["tie"] / voted_count) if voted_count else 0,
-        "both_bad_rate": (totals["both_bad"] / voted_count) if voted_count else 0,
-    }
+    return {"success": True, "message": "Vote recorded"}
 
 
 @app.get("/arena/voted")
-def get_voted(session_id: str = Query(..., description="Client Session-ID"), auth: bool = Depends(verify_arena_key)):
-    """Liste aller comparison_ids, die diese Session bereits gevoted hat."""
+def get_voted(session_id: str = Query(...)):
+    """Liefert die comparison_ids, die diese Session bereits gevoted hat"""
     data_dir = Path(__file__).parent / "data"
     user_votes_file = data_dir / "arena_user_votes.jsonl"
+    
     voted: List[str] = []
-    seen: set[str] = set()
+    seen: set = set()
+    
     if user_votes_file.exists():
         with user_votes_file.open("r", encoding="utf-8") as f:
             for line in f:
@@ -1094,19 +868,85 @@ def get_voted(session_id: str = Query(..., description="Client Session-ID"), aut
                     if cid and cid not in seen:
                         seen.add(cid)
                         voted.append(cid)
+    
     return {"comparison_ids": voted}
 
 
+@app.get("/arena/comparisons")
+def get_all_comparisons(subset: Optional[int] = None):
+    """Liefert alle Comparisons, optional gefiltert nach Subset"""
+    if subset is not None:
+        comparisons = default_storage.get_comparisons_by_subset(subset)
+    else:
+        comparisons = default_storage.load_all_comparisons()
+    
+    return {
+        "total": len(comparisons),
+        "comparisons": [c.get_shuffled_view() for c in comparisons]
+    }
+
+
+@app.get("/arena/statistics")
+def get_statistics():
+    """Aggregierte Statistiken auf Basis individueller Nutzer-Votes"""
+    data_dir = Path(__file__).parent / "data"
+    user_votes_file = data_dir / "arena_user_votes.jsonl"
+    
+    latest: Dict[Tuple[str, str], Dict] = {}
+    
+    if user_votes_file.exists():
+        with user_votes_file.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    continue
+                key = (obj.get("session_id", ""), str(obj.get("comparison_id", "")))
+                ts = obj.get("timestamp") or ""
+                if key not in latest or ts >= latest[key].get("timestamp", ""):
+                    latest[key] = obj
+    
+    totals = {"A": 0, "B": 0, "tie": 0, "both_bad": 0}
+    for v in latest.values():
+        ch = v.get("vote")
+        if ch in totals:
+            totals[ch] += 1
+    
+    voted_count = sum(totals.values())
+    return {
+        "distinct_user_votes": len(latest),
+        "votes_for_a": totals["A"],
+        "votes_for_b": totals["B"],
+        "votes_tie": totals["tie"],
+        "votes_both_bad": totals["both_bad"],
+        "win_rate_a": (totals["A"] / voted_count) if voted_count else 0,
+        "win_rate_b": (totals["B"] / voted_count) if voted_count else 0,
+        "tie_rate": (totals["tie"] / voted_count) if voted_count else 0,
+        "both_bad_rate": (totals["both_bad"] / voted_count) if voted_count else 0,
+    }
+
+
+@app.get("/arena/comparison/{comparison_id}")
+def get_comparison(comparison_id: str):
+    """Liefert eine einzelne Comparison"""
+    c = default_storage.get_comparison_by_id(comparison_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Comparison not found")
+    return c.model_dump()
+
+
 @app.get("/arena/session")
-def create_session(auth: bool = Depends(verify_arena_key)):
-    """Erzeugt eine neue Session-ID (optional – Clients können auch selbst UUIDs erzeugen)."""
+def create_session():
+    """Erzeugt eine neue Session-ID"""
     return {"session_id": str(uuid.uuid4())}
 
 
 @app.get("/arena/user-votes")
-def get_user_votes(session_id: Optional[str] = None, auth: bool = Depends(verify_arena_key)):
-    """Liefert alle User-Votes mit Session-IDs. Optional filterbar nach session_id."""
-    # Use the same path logic as submit_vote
+def get_user_votes(session_id: Optional[str] = None):
+    """Liefert alle User-Votes, optional gefiltert nach session_id"""
     data_dir = Path(__file__).parent / "data"
     user_votes_file = data_dir / "arena_user_votes.jsonl"
     
@@ -1124,22 +964,9 @@ def get_user_votes(session_id: Optional[str] = None, auth: bool = Depends(verify
                 except Exception:
                     continue
     
-    return {"total": len(votes), "votes": votes}
-
-
-@app.get("/arena/comparison/{comparison_id}")
-def get_comparison(comparison_id: str, auth: bool = Depends(verify_arena_key)):
-    """
-    Gibt einen spezifischen Vergleich zurück.
-    """
-    comparison = default_storage.get_comparison_by_id(comparison_id)
-    
-    if not comparison:
-        raise HTTPException(status_code=404, detail="Comparison not found")
-    
-    return comparison.model_dump()
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    return {
+        "total": len(votes),
+        "votes": votes,
+        "file_path": str(user_votes_file),
+        "exists": user_votes_file.exists()
+    }

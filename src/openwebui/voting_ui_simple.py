@@ -33,9 +33,9 @@ else:
 @app.get("/", response_class=HTMLResponse)
 def index():
     """Einfaches Voting UI"""
-    api_base = os.getenv("ARENA_API_BASE", "http://arena-api:8001").rstrip("/")
-    # Convert internal Docker DNS to localhost for browser access
-    api_override = api_base.replace("http://arena-api:", "http://localhost:")
+    # API URL: Use direct API endpoint for direct HTTP access (port 8002)
+    # JavaScript will use this or fall back to relative URLs for HTTPS/nginx
+    api_override = "http://localhost:8001"
     html = """
 <!DOCTYPE html>
 <html>
@@ -800,8 +800,10 @@ def index():
 @app.get("/user-votes", response_class=HTMLResponse)
 def user_votes():
     """User-Votes mit Session-IDs"""
-    api_base = os.getenv("ARENA_API_BASE", "http://arena-api:8001").rstrip("/")
-    api_override = api_base.replace("http://arena-api:", "http://localhost:")
+    # API URL: Leave empty for intelligent JS detection
+    # Works over HTTPS (nginx) with relative URLs
+    # Also works over HTTP direct with fallback logic
+    api_override = ""
     html = """
 <!DOCTYPE html>
 <html>
@@ -934,9 +936,10 @@ def user_votes():
 @app.get("/results", response_class=HTMLResponse)
 def results():
     """Neutrale, read-only Ergebnisliste als Tabelle"""
-    api_base = os.getenv("ARENA_API_BASE", "http://arena-api:8001").rstrip("/")
-    # Convert internal Docker DNS to localhost for browser access
-    api_override = api_base.replace("http://arena-api:", "http://localhost:")
+    # API URL: Leave empty for intelligent JS detection
+    # Works over HTTPS (nginx) with relative URLs
+    # Also works over HTTP direct with fallback logic
+    api_override = ""
     html = """
 <!DOCTYPE html>
 <html>

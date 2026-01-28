@@ -8,21 +8,19 @@ services:
       dockerfile: Dockerfile.api
     container_name: fu-arena-api
     env_file:
-      - .env.production
+      - .env
     environment:
       PYTHONUNBUFFERED: "1"
       ENVIRONMENT: "LOCAL"  # Set to LOCAL for testing (no API key), PRODUCTION for deployment
+      USE_KEY_VAULT: "false"  # Disable Key Vault for local testing
       # Arena-specific
       STORAGE_PATH: /app/src/openwebui/data/arena_votes.jsonl
-      # Azure Key Vault integration
-      USE_KEY_VAULT: "${USE_KEY_VAULT:-true}"
-      KEY_VAULT_NAME: "${KEY_VAULT_NAME:-kicwa-keyvault-prod}"
       # CORS Origins from environment
       CORS_ORIGINS: "${CORS_ORIGINS:-*}"
     volumes:
       - ./src/openwebui/data:/app/src/openwebui/data
     ports:
-      - "127.0.0.1:8001:8001"  # Only bind to localhost, nginx will proxy
+      - "0.0.0.0:8001:8001"  # Allow external access for local testing
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8001/health"]
@@ -53,7 +51,7 @@ services:
       arena-api:
         condition: service_healthy
     ports:
-      - "127.0.0.1:8002:8002"  # Only bind to localhost, nginx will proxy
+      - "0.0.0.0:8002:8002"  # Allow external access for local testing
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8002/"]
