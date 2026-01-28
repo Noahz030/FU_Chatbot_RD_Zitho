@@ -694,8 +694,8 @@ class GenerateComparisonRequest(BaseModel):
 @app.post("/arena/generate")
 async def generate_comparison(
     request: GenerateComparisonRequest,
-    auth: bool = Depends(verify_arena_key),
     http_request: Request,
+    auth: bool = Depends(verify_arena_key),
 ):
     """
     Generiert on-demand Antworten von beiden Modellen für eine Frage.
@@ -877,9 +877,9 @@ def save_comparison(request: SaveComparisonRequest, auth: bool = Depends(verify_
 @app.post("/arena/vote")
 def submit_vote(
     request: VoteRequest,
-    auth: bool = Depends(verify_arena_key),
-    x_session_id: Optional[str] = Header(default=None),
     http_request: Request,
+    x_session_id: Optional[str] = Header(default=None),
+    auth: bool = Depends(verify_arena_key),
 ):
     """
     Submitted einen Vote für einen existierenden Vergleich.
