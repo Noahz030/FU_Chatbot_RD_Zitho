@@ -11,7 +11,15 @@ import random
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Literal
-from pydantic import BaseModel, Field
+from enum import Enum
+from pydantic import BaseModel, Field, field_validator, constr
+
+class VoteChoice(str, Enum):
+    """Valid voting options for arena comparisons."""
+    A = "A"
+    B = "B"
+    TIE = "tie"
+    BOTH_BAD = "both_bad"
 
 
 def get_shuffle_seed(comparison_id: str) -> bool:
@@ -35,8 +43,8 @@ class ArenaComparison(BaseModel):
     
     model_config = {"extra": "allow"}  # Allow extra fields for backwards compatibility
     
-    id: str = Field(description="Unique ID für diesen Vergleich")
-    question: str = Field(description="Die Frage die gestellt wurde")
+    id: constr(min_length=1, max_length=100) = Field(description="Unique ID für diesen Vergleich (max 100 chars)")
+    question: constr(min_length=1, max_length=2000) = Field(description="Die Frage die gestellt wurde (max 2000 chars)")
     timestamp: str = Field(description="ISO timestamp wann die Frage gestellt wurde")
     
     model_a: str = Field(description="Name des ersten Modells")
@@ -45,12 +53,12 @@ class ArenaComparison(BaseModel):
     model_b: str = Field(description="Name des zweiten Modells")
     answer_b: str = Field(description="Antwort von Modell B")
     
-    vote: Optional[Literal["A", "B", "tie", "both_bad"]] = Field(default=None, description="Voting-Ergebnis")
+    vote: Optional[VoteChoice] = Field(default=None, description="Voting-Ergebnis (A|B|tie|both_bad)")
     vote_timestamp: Optional[str] = Field(default=None, description="Wann wurde gevotet")
-    comment: Optional[str] = Field(default=None, description="Optional: Kommentar zum Vote")
+    comment: Optional[constr(max_length=1000)] = Field(default=None, description="Optional: Kommentar zum Vote (max 1000 chars)")
     subset_id: Optional[int] = Field(default=None, description="Subset 1-4 für User-Assignment")
-    session_id: Optional[str] = Field(default=None, description="Session ID für on-demand generation tracking")
-    user_id: Optional[str] = Field(default=None, description="User ID für on-demand generation tracking")
+    session_id: Optional[constr(max_length=100)] = Field(default=None, description="Session ID für on-demand generation tracking (max 100 chars)")
+    user_id: Optional[constr(max_length=100)] = Field(default=None, description="User ID für on-demand generation tracking (max 100 chars)")
     is_generated_on_demand: bool = Field(default=False, description="True wenn die Antworten on-demand generiert wurden")
     
     def get_shuffled_view(self) -> Dict:
@@ -132,17 +140,17 @@ class VotingStorage:
                 return comp
         return None
     
-    def update_vote(self, comparison_id: str, vote: Literal["A", "B", "tie", "both_bad"], comment: Optional[str] = None) -> bool:
+    def update_vote(self, comparison_id: str, vote: VoteChoice, comment: Optional[str] = None) -> bool:
         """
         Updated einen existierenden Vergleich mit Vote-Informationen.
         
         Returns:
             True wenn erfolgreich, False wenn ID nicht gefunden
         """
-        if not comparison_id or len(comparison_id) > 64:
+        if not comparison_id or len(comparison_id) > 100:
             return False
-        if comment is not None and len(comment) > 500:
-            comment = comment[:500]
+        if comment is not None and len(comment) > 1000:
+            comment = comment[:1000]
 
         comparisons = self.load_all_comparisons()
         found = False

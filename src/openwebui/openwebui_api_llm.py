@@ -14,20 +14,21 @@ import hashlib
 import logging
 from datetime import datetime
 from typing import AsyncGenerator, Literal, Optional, Any, Annotated, Dict, Tuple, List
+from enum import Enum
 
 from fastapi import FastAPI, HTTPException, Depends, Header, status, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.security import APIKeyHeader
 from llama_index.core.llms import ChatMessage, MessageRole
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, constr
 from pathlib import Path
 
 from src.env import env
 from src.llm.model_registry import get_registry
 # Wichtige Imports für LLM-Assistenten werden lazy innerhalb der Funktionen geladen,
 # damit Arena-Endpunkte ohne vollständige LLM/Monitoring-Dependencies funktionieren.
-from src.openwebui.voting_system import default_storage, ArenaComparison
+from src.openwebui.voting_system import default_storage, ArenaComparison, VoteChoice
 from src.openwebui.arena_questions import (
     get_all_questions, 
     get_questions_by_category, 
@@ -44,8 +45,8 @@ app = FastAPI(
 
 logger = logging.getLogger(__name__)
 
-# Request size limit (bytes)
-MAX_REQUEST_BODY_BYTES = int(os.getenv("MAX_REQUEST_BODY_BYTES", "10240"))  # 10KB default
+# Request size limit (bytes) - Safety constraint to prevent DoS
+MAX_REQUEST_BODY_BYTES = int(os.getenv("MAX_REQUEST_BODY_BYTES", "1048576"))  # 1MB default
 
 @app.middleware("http")
 async def enforce_request_size_limit(request: Request, call_next):
@@ -602,8 +603,17 @@ def health():
 # Arena Voting Endpoints
 # ============================================================================
 # Pydantic Models for Arena
+
+class VoteEnum(str, Enum):
+    """Valid voting choices for arena comparisons."""
+    A = "A"
+    B = "B"
+    TIE = "tie"
+    BOTH_BAD = "both_bad"
+
+
 class SaveComparisonRequest(BaseModel):
-    question: str
+    question: constr(min_length=1, max_length=2000)
     model_a: str
     answer_a: str
     model_b: str
@@ -611,17 +621,17 @@ class SaveComparisonRequest(BaseModel):
 
 
 class VoteRequest(BaseModel):
-    comparison_id: str
-    vote: Literal["A", "B", "tie", "both_bad"]
-    comment: Optional[str] = None
+    comparison_id: constr(min_length=1, max_length=100)
+    vote: VoteEnum = Field(description="Must be one of: A, B, tie, both_bad")
+    comment: Optional[constr(max_length=1000)] = Field(default=None, description="Optional comment (max 1000 chars)")
     subset_id: Optional[int] = None
 
 
 class GenerateRequest(BaseModel):
-    question: str
-    session_id: str
+    question: constr(min_length=1, max_length=2000)
+    session_id: constr(min_length=1, max_length=100)
     subset_id: Optional[int] = None
-    user_id: Optional[str] = None
+    user_id: Optional[constr(max_length=100)] = None
 
 
 @app.get("/arena")
@@ -821,7 +831,7 @@ def submit_vote(request: VoteRequest, x_session_id: Optional[str] = Header(defau
     
     vote_record = {
         "comparison_id": request.comparison_id,
-        "vote": request.vote,
+        "vote": request.vote.value if isinstance(request.vote, VoteEnum) else str(request.vote),
         "comment": request.comment,
         "subset_id": request.subset_id,
         "session_id": session_id,
