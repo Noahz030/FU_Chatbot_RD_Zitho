@@ -572,15 +572,32 @@ def index():
             const unvoted = comparisons.filter(c => !votedSet.has(String(c.id)));
 
             if (unvoted.length === 0) {
-                container.innerHTML = `
-                    <div class="loading">
-                        <h2>✅ Aktuelle Frage beantwortet!</h2>
-                        <p>Du hast ${votedInSubset} Fragen bewertet.</p>
-                        <p>Klicke auf "Weiter" um die nächste Frage zu generieren.</p>
-                        <button class="submit" onclick="generateOnDemandComparison()" style="margin-top: 20px;">➡️ Nächste Frage</button>
-                        <button class="submit" onclick="resetSession()" style="margin-top: 10px;">🔄 Neue Session starten</button>
-                    </div>
-                `;
+                // Check if subset is completed
+                if (votedInSubset >= totalInSubset && totalInSubset > 0) {
+                    container.innerHTML = `
+                        <div class="completion" style="background: white; padding: 40px; border-radius: 8px; text-align: center;">
+                            <h2 style="font-size: 32px; margin: 0 0 15px;">✅ Subset abgeschlossen!</h2>
+                            <p style="font-size: 16px; color: #666; margin: 0 0 20px;">
+                                Du hast alle ${totalInSubset} Fragen in Subset ${assignedSubset} bewertet.
+                            </p>
+                            <p style="font-size: 14px; color: #999; margin: 0 0 30px;">
+                                Danke für deine Teilnahme an der Arena-Evaluierung!
+                            </p>
+                            <button class="submit" onclick="resetSession()" style="margin-top: 10px;">🔄 Neue Session starten</button>
+                        </div>
+                    `;
+                } else {
+                    // Current question answered, but more questions available
+                    container.innerHTML = `
+                        <div class="loading">
+                            <h2>✅ Aktuelle Frage beantwortet!</h2>
+                            <p>Du hast ${votedInSubset} Fragen bewertet.</p>
+                            <p>Klicke auf "Weiter" um die nächste Frage zu generieren.</p>
+                            <button class="submit" onclick="generateOnDemandComparison()" style="margin-top: 20px;">➡️ Nächste Frage</button>
+                            <button class="submit" onclick="resetSession()" style="margin-top: 10px;">🔄 Neue Session starten</button>
+                        </div>
+                    `;
+                }
                 return;
             }
 
