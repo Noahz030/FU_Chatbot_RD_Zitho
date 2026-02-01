@@ -644,6 +644,7 @@ class VoteRequest(BaseModel):
     vote: VoteEnum = Field(description="Must be one of: A, B, tie, both_bad")
     comment: Optional[constr(max_length=1000)] = Field(default=None, description="Optional comment (max 1000 chars)")
     subset_id: Optional[int] = None
+    csrf_token: Optional[str] = Field(default=None, description="CSRF token for vote submission")
 
 
 class GenerateRequest(BaseModel):
@@ -850,6 +851,10 @@ def submit_vote(request: VoteRequest, x_session_id: Optional[str] = Header(defau
     if not session_id:
         raise HTTPException(status_code=400, detail="Session ID required")
     
+    # CSRF Token Validation
+    if not request.csrf_token or not validate_csrf_token(session_id, request.csrf_token):
+        raise HTTPException(status_code=403, detail="Invalid CSRF token")
+    
     # Speichere Vote in Datei
     data_dir = get_data_dir()
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -877,7 +882,14 @@ def submit_vote(request: VoteRequest, x_session_id: Optional[str] = Header(defau
     if not success:
         raise HTTPException(status_code=404, detail="Comparison not found")
     
-    return {"success": True, "message": "Vote recorded"}
+    # Rotate CSRF token after successful vote
+    new_csrf_token = get_csrf_token_for_session(session_id)
+    
+    return {
+        "success": True,
+        "message": "Vote recorded",
+        "csrf_token": new_csrf_token  # Return new token for next vote
+    }
 
 
 @app.get("/arena/voted")

@@ -741,12 +741,15 @@ def index():
                 });
                 
                 if (resp.ok) {
+                    const data = await resp.json();
                     selectedVote = null;
                     votedSet.add(String(id));
                     votedInSubset++;
                     
-                    // Fetch new CSRF token for next vote
-                    await fetchCsrfToken(sessionId);
+                    // Update CSRF token from response (rotated after vote)
+                    if (data.csrf_token) {
+                        csrfToken = data.csrf_token;
+                    }
                     
                     // Trigger prefetch refill immediately after vote (aggressive refilling)
                     if (prefetchQueue.length <= REFILL_THRESHOLD) {
