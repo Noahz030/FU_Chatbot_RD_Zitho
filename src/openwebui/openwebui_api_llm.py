@@ -689,7 +689,14 @@ def call_assistant(assistant: Any, question: str) -> str:
         # Both assistants need (query, model, chat_history)
         # Use GPT-4 as default model for consistency
         from src.llm.LLMs import Models
-        response = assistant.chat(question, Models.GPT4, chat_history=[])
+        
+        # Call using keyword arguments for compatibility with all assistant types
+        # This ensures proper parameter binding for both local and proxy assistants
+        response = assistant.chat(
+            query=question,
+            model=Models.GPT4,
+            chat_history=[]
+        )
         
         # Handle different response types
         if isinstance(response, str):
