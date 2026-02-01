@@ -735,6 +735,7 @@ def index():
                         comparison_id: id,
                         vote: selectedVote,
                         comment: null,
+                        session_id: sessionId,  // Also send in body for reliability
                         subset_id: subsetId || assignedSubset,
                         csrf_token: csrfToken
                     })

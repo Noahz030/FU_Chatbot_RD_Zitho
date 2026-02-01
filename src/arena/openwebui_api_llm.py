@@ -187,10 +187,19 @@ def validate_csrf_token(session_id: str, token: str) -> bool:
         True if token is valid, False otherwise
     """
     expected_token = _csrf_token_cache.get(session_id)
+    
+    # Debug logging
+    import sys
+    print(f"[CSRF DEBUG] Session: {session_id[:16]}..., Token provided: {token[:16] if token else 'NONE'}..., Expected: {expected_token[:16] if expected_token else 'NONE'}...", file=sys.stderr)
+    print(f"[CSRF DEBUG] Cache contains {len(_csrf_token_cache)} tokens", file=sys.stderr)
+    
     if not expected_token or not token:
+        print(f"[CSRF DEBUG] FAILED: Missing expected_token or token", file=sys.stderr)
         return False
     # Constant-time comparison to prevent timing attacks
-    return secrets.compare_digest(expected_token, token)
+    result = secrets.compare_digest(expected_token, token)
+    print(f"[CSRF DEBUG] Token match: {result}", file=sys.stderr)
+    return result
 
 
 def rotate_csrf_token(session_id: str) -> str:
@@ -643,6 +652,7 @@ class VoteRequest(BaseModel):
     comparison_id: constr(min_length=1, max_length=100)
     vote: VoteEnum = Field(description="Must be one of: A, B, tie, both_bad")
     comment: Optional[constr(max_length=1000)] = Field(default=None, description="Optional comment (max 1000 chars)")
+    session_id: Optional[constr(min_length=1, max_length=100)] = Field(default=None, description="Session ID")
     subset_id: Optional[int] = None
     csrf_token: Optional[str] = Field(default=None, description="CSRF token for vote submission")
 
@@ -835,8 +845,7 @@ async def generate_comparison(request: GenerateRequest):
 @app.get("/arena/csrf-token")
 def get_csrf_token(session_id: str = Query(...)):
     """Liefert einen CSRF-Token für die Session"""
-    token = secrets.token_urlsafe(32)
-    # Hier könnte man den Token auch im Storage speichern für Validierung
+    token = get_csrf_token_for_session(session_id)  # Generate or retrieve cached token
     return {
         "csrf_token": token,
         "session_id": session_id
@@ -846,10 +855,16 @@ def get_csrf_token(session_id: str = Query(...)):
 @app.post("/arena/vote")
 def submit_vote(request: VoteRequest, x_session_id: Optional[str] = Header(default=None)):
     """Speichert einen Vote"""
-    session_id = x_session_id or request.comparison_id  # Fallback
+    # Prefer session_id from request body, fallback to header
+    session_id = request.session_id or x_session_id
     
     if not session_id:
-        raise HTTPException(status_code=400, detail="Session ID required")
+        raise HTTPException(status_code=400, detail="Session ID required (in body or X-Session-ID header)")
+    
+    # Debug
+    import sys
+    print(f"[VOTE DEBUG] session_id: {session_id[:16]}...", file=sys.stderr)
+    print(f"[VOTE DEBUG] csrf_token: {request.csrf_token[:16] if request.csrf_token else 'NONE'}...", file=sys.stderr)
     
     # CSRF Token Validation
     if not request.csrf_token or not validate_csrf_token(session_id, request.csrf_token):
