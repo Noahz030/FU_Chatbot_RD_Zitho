@@ -48,6 +48,17 @@ These scripts were part of earlier Arena development phases but have been supers
 **`init-ssl.sh.old`** (5.7 KB)
 - Purpose: Old SSL certificate initialization
 - Status: Superseded by `init-ssl.sh` (Jan 9 update)
+
+### Local Development Scripts (OBSOLETE - Docker Now Used)
+
+**`start_arena.sh`** (2.1 KB)
+- Purpose: Start Arena API + UI directly with Python/uvicorn (no Docker)
+- Status: Obsolete - All development now uses Docker Compose
+- Reference: Use `start_arena_full.sh` or `docker compose -f docker-compose.prod.yml up -d`
+- Reason: 
+  - Hardcoded pyenv paths (not portable)
+  - Missing external chatbot setup
+  - Docker provides consistent environment
 - Reason: New version has better domain handling and error messages
 
 ### Monitoring Scripts (DUPLICATE)
