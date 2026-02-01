@@ -857,7 +857,7 @@ def get_csrf_token(session_id: str = Query(...)):
 
 
 @app.post("/arena/vote")
-def submit_vote(request: VoteRequest, http_request: Request, x_session_id: Optional[str] = Header(default=None)):
+def submit_vote(request: VoteRequest, x_session_id: Optional[str] = Header(default=None)):
     """Speichert einen Vote"""
     # Prefer session_id from request body, fallback to header
     session_id = request.session_id or x_session_id
@@ -870,9 +870,9 @@ def submit_vote(request: VoteRequest, http_request: Request, x_session_id: Optio
     print(f"[VOTE DEBUG] session_id: {session_id[:16]}...", file=sys.stderr)
     print(f"[VOTE DEBUG] csrf_token: {request.csrf_token[:16] if request.csrf_token else 'NONE'}...", file=sys.stderr)
     
-    # Rate limiting: Check both session and IP limits
-    client_ip = get_client_ip(http_request)
-    check_generation_rate_limit(session_id, client_ip)
+    # Note: No application-level rate limiting for votes
+    # Votes are already protected by nginx rate limiting (5 req/s = 300/min)
+    # and are cheap operations (file writes only), unlike generations (expensive LLM calls)
     
     # CSRF Token Validation
     if not request.csrf_token or not validate_csrf_token(session_id, request.csrf_token):
