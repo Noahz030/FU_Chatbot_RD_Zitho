@@ -19,7 +19,7 @@ services:
       # CORS Origins from environment
       CORS_ORIGINS: "${CORS_ORIGINS:-*}"
     volumes:
-      - ./src/arena/data:/app/src/arena/data
+      - arena_data:/app/src/arena/data
     ports:
       - "0.0.0.0:8001:8001"  # Allow external access for local testing
     restart: unless-stopped
