@@ -378,6 +378,7 @@ def index():
                 const generateOne = async () => {
                     const question = nextQuestion();
                     if (!question) return; // nothing left
+                    const honeypot = document.getElementById('honeypot_website');
                     const resp = await fetch(API + '/arena/generate', {
                         method: 'POST',
                         headers: {
@@ -388,7 +389,8 @@ def index():
                             question: question,
                             session_id: sessionId,
                             subset_id: assignedSubset,
-                            user_id: null
+                            user_id: null,
+                            honeypot: honeypot ? honeypot.value : null  // Send honeypot value
                         })
                     });
                     if (!resp.ok) throw new Error('Prefetch failed: ' + resp.status);
@@ -548,6 +550,7 @@ def index():
                 container.innerHTML = '<div class="loading">⏳ Generiere Antworten für: "' + question + '"...</div>';
                 
                 // Call generate endpoint with subset validation
+                const honeypot = document.getElementById('honeypot_website');
                 const resp = await fetch(API + '/arena/generate', {
                     method: 'POST',
                     headers: {
@@ -558,7 +561,8 @@ def index():
                         question: question,
                         session_id: sessionId,
                         subset_id: assignedSubset,
-                        user_id: null
+                        user_id: null,
+                        honeypot: honeypot ? honeypot.value : null  // Send honeypot value
                     })
                 });
                 
@@ -725,6 +729,7 @@ def index():
             }
             
             try {
+                const honeypot = document.getElementById('honeypot_website');
                 const resp = await fetch(API + '/arena/vote', {
                     method: 'POST',
                     headers: {
@@ -737,7 +742,8 @@ def index():
                         comment: null,
                         session_id: sessionId,  // Also send in body for reliability
                         subset_id: subsetId || assignedSubset,
-                        csrf_token: csrfToken
+                        csrf_token: csrfToken,
+                        honeypot: honeypot ? honeypot.value : null  // Send honeypot value
                     })
                 });
                 

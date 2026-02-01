@@ -655,6 +655,7 @@ class VoteRequest(BaseModel):
     session_id: Optional[constr(min_length=1, max_length=100)] = Field(default=None, description="Session ID")
     subset_id: Optional[int] = None
     csrf_token: Optional[str] = Field(default=None, description="CSRF token for vote submission")
+    honeypot: Optional[str] = Field(default=None, description="Honeypot field for bot detection")
 
 
 class GenerateRequest(BaseModel):
@@ -662,6 +663,7 @@ class GenerateRequest(BaseModel):
     session_id: constr(min_length=1, max_length=100)
     subset_id: Optional[int] = None
     user_id: Optional[constr(max_length=100)] = None
+    honeypot: Optional[str] = Field(default=None, description="Honeypot field for bot detection")
 
 
 @app.get("/arena")
@@ -675,9 +677,18 @@ def arena_root():
 
 
 @app.get("/arena/assign-subset")
-def assign_subset(randomize: bool = Query(False)):
+def assign_subset(request: Request, randomize: bool = Query(False)):
     """Weist dem User ein Subset zu (Round-Robin basierend auf Vote-Counts)."""
     subset_id = default_storage.assign_subset_round_robin()
+    
+    # Audit log: subset assignment
+    write_audit_event(
+        "subset_assigned",
+        subset_id=subset_id,
+        request=request,
+        detail=f"Round-robin assignment"
+    )
+    
     return {
         "subset_id": subset_id,
         "message": f"Du wurdest Subset {subset_id} zugewiesen"
@@ -761,9 +772,30 @@ async def generate_comparison(request: GenerateRequest, http_request: Request):
     """
     logger.info(f"🔄 On-demand generating comparison for: {request.question[:50]}...")
     
+    # Honeypot detection: if filled, it's a bot
+    if request.honeypot:
+        write_audit_event(
+            "honeypot_triggered",
+            session_id=request.session_id,
+            subset_id=request.subset_id,
+            request=http_request,
+            detail=f"Honeypot field filled: {request.honeypot[:50]}"
+        )
+        raise HTTPException(status_code=400, detail="Invalid request")
+    
     # Rate limiting: Check both session and IP limits
     client_ip = get_client_ip(http_request)
-    check_generation_rate_limit(request.session_id, client_ip)
+    try:
+        check_generation_rate_limit(request.session_id, client_ip)
+    except HTTPException as e:
+        # Audit log: rate limit exceeded
+        write_audit_event(
+            "rate_limit_exceeded",
+            session_id=request.session_id,
+            request=http_request,
+            detail=str(e.detail)
+        )
+        raise
     
     try:
         # Get both assistant versions
@@ -831,6 +863,16 @@ async def generate_comparison(request: GenerateRequest, http_request: Request):
         default_storage.save_comparison(comparison)
         logger.info(f"✅ Saved comparison {comparison.id}")
         
+        # Audit log: successful generation
+        write_audit_event(
+            "comparison_generated",
+            session_id=request.session_id,
+            comparison_id=comparison.id,
+            subset_id=request.subset_id,
+            request=http_request,
+            detail=f"Question: {request.question[:100]}"
+        )
+        
         # Return shuffled view for blind testing
         result = comparison.get_shuffled_view()
         logger.info(f"✅ Returning comparison (shuffled: {result.get('is_shuffled')})")
@@ -857,7 +899,7 @@ def get_csrf_token(session_id: str = Query(...)):
 
 
 @app.post("/arena/vote")
-def submit_vote(request: VoteRequest, x_session_id: Optional[str] = Header(default=None)):
+def submit_vote(request: VoteRequest, http_request: Request, x_session_id: Optional[str] = Header(default=None)):
     """Speichert einen Vote"""
     # Prefer session_id from request body, fallback to header
     session_id = request.session_id or x_session_id
@@ -870,12 +912,33 @@ def submit_vote(request: VoteRequest, x_session_id: Optional[str] = Header(defau
     print(f"[VOTE DEBUG] session_id: {session_id[:16]}...", file=sys.stderr)
     print(f"[VOTE DEBUG] csrf_token: {request.csrf_token[:16] if request.csrf_token else 'NONE'}...", file=sys.stderr)
     
+    # Honeypot detection: if filled, it's a bot
+    if request.honeypot:
+        write_audit_event(
+            "honeypot_triggered",
+            session_id=session_id,
+            comparison_id=request.comparison_id,
+            subset_id=request.subset_id,
+            request=http_request,
+            detail=f"Honeypot field filled during vote: {request.honeypot[:50]}"
+        )
+        raise HTTPException(status_code=400, detail="Invalid request")
+    
     # Note: No application-level rate limiting for votes
     # Votes are already protected by nginx rate limiting (5 req/s = 300/min)
     # and are cheap operations (file writes only), unlike generations (expensive LLM calls)
     
     # CSRF Token Validation
     if not request.csrf_token or not validate_csrf_token(session_id, request.csrf_token):
+        # Audit log: CSRF validation failed
+        write_audit_event(
+            "csrf_validation_failed",
+            session_id=session_id,
+            comparison_id=request.comparison_id,
+            subset_id=request.subset_id,
+            request=http_request,
+            detail="Invalid or missing CSRF token"
+        )
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
     
     # Speichere Vote in Datei
@@ -904,6 +967,17 @@ def submit_vote(request: VoteRequest, x_session_id: Optional[str] = Header(defau
     
     if not success:
         raise HTTPException(status_code=404, detail="Comparison not found")
+    
+    # Audit log: successful vote submission
+    write_audit_event(
+        "vote_submitted",
+        session_id=session_id,
+        comparison_id=request.comparison_id,
+        subset_id=request.subset_id,
+        vote=request.vote.value if isinstance(request.vote, VoteEnum) else str(request.vote),
+        request=http_request,
+        detail=f"Comment: {request.comment[:100] if request.comment else 'None'}"
+    )
     
     # Rotate CSRF token after successful vote
     new_csrf_token = get_csrf_token_for_session(session_id)
