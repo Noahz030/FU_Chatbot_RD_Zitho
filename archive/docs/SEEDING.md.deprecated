@@ -1,0 +1,306 @@
+# Arena Seeding Guide
+
+> **⚠️ DEPRECATED (Januar 2026)**: Dieses Dokument beschreibt den alten Pre-Seeding Workflow.
+> 
+> **Das System verwendet jetzt On-Demand Generation:**
+> - Keine Pre-Seeding mehr notwendig
+> - Antworten werden live pro User-Session generiert
+> - Siehe `src/openwebui/arena_questions.py` für Question Catalog
+> - Siehe `VOTING.md` für aktuelle Dokumentation
+>
+> Diese Datei bleibt nur als Referenz für Legacy-Workflows erhalten.
+
+---
+
+# ⚠️ LEGACY: Arena Seeding Guide (veraltet)
+
+This document explains the **old pre-seeding workflow** (no longer used).
+
+## 🚨 Critical: Storage Path (Legacy)
+
+**All seeding scripts write to `src/openwebui/data/arena_votes.jsonl`**
+
+This is the **only** location where the Arena UI loads comparisons from. Do not:
+- Write to `data/arena_votes.jsonl` (workspace root) - this file is ignored by the Arena
+- Manually edit files in other locations
+
+All provided seeding scripts handle this automatically. If you're writing custom seeding code, ensure you use:
+```python
+votes_file = Path(__file__).parent.parent / "src" / "openwebui" / "data" / "arena_votes.jsonl"
+votes_file.parent.mkdir(parents=True, exist_ok=True)
+```
+
+## Quick Start: Seed External Chatbots
+
+For comparing two externally-hosted chatbot versions:
+
+```bash
+# 1. Create question file
+echo "What is machine learning?" > data/fixed_questions.txt
+echo "What is deep learning?" >> data/fixed_questions.txt
+
+# 2. Ensure both chatbots are running
+docker ps | grep chatbot
+
+# 3. Run seeding script
+python scripts/arena_seed_external.py
+
+# 4. Verify in UI
+open http://localhost:8002
+```
+
+**What the script does:**
+1. Loads questions from `data/fixed_questions.txt`
+2. Calls Arena API (`/v1/chat/completions`) for each model
+3. Stores comparison in `src/openwebui/data/arena_votes.jsonl`
+4. Comparisons appear immediately in voting UI
+
+## Seeding Methods
+
+### Method 1: External Chatbots (Recommended for A/B Testing)
+
+**Use case:** Compare two running chatbot services via API
+
+**Script:** `scripts/arena_seed_external.py`
+
+**Requirements:**
+- Questions file: `data/fixed_questions.txt` (one per line, UTF-8)
+- Arena API running: `http://localhost:8001`
+- Both chatbot APIs accessible
+- Models must be configured in `config/models.yaml`
+
+**Example:**
+
+```bash
+python scripts/arena_seed_external.py
+```
+
+**Output:**
+- Queries each model via Arena API
+- Stores full comparison objects in `src/openwebui/data/arena_votes.jsonl`
+- Shows progress per question
+
+### Method 2: Direct API Calls
+
+**Use case:** Programmatic seeding from your application
+
+**Endpoint:** `POST /arena/save-comparison`
+
+**Example:**
+
+```python
+import requests
+
+comparison = {
+    "question": "What is AI?",
+    "model_a": "gpt4",
+    "model_b": "claude",
+    "response_a": "AI is artificial intelligence...",
+    "response_b": "Artificial intelligence refers to...",
+}
+
+response = requests.post(
+    "http://localhost:8001/arena/save-comparison",
+    json=comparison
+)
+```
+
+### Method 3: JSONL Direct Append (Legacy)
+
+**Use case:** Bulk import pre-existing answer pairs
+
+**Requirements:**
+- JSONL file with objects containing: `question`, `model_a`, `model_b`, `response_a`, `response_b`
+- Optional: `id`, `vote`, `comment`, `vote_timestamp`
+
+**Example:**
+
+```bash
+# Create JSONL file
+cat > comparisons.jsonl << 'EOF'
+{"question": "What is X?", "model_a": "original", "model_b": "improved", "response_a": "X is...", "response_b": "X refers to..."}
+{"question": "What is Y?", "model_a": "original", "model_b": "improved", "response_a": "Y is...", "response_b": "Y means..."}
+EOF
+
+# Append to Arena votes file
+cat comparisons.jsonl >> src/openwebui/data/arena_votes.jsonl
+```
+
+**Note:** Manual appending is error-prone. Use scripts instead.
+
+### Method 4: JSON Batch Import
+
+**Use case:** Convert structured JSON to Arena format
+
+**Script:** `scripts/arena_seed.py` (if available)
+
+```bash
+python scripts/arena_seed.py \
+    --json path/to/items.json \
+    --model-a "original" \
+    --model-b "improved"
+```
+
+## Verification
+
+After seeding, verify data was written correctly:
+
+```bash
+# Check file exists and has content
+wc -l src/openwebui/data/arena_votes.jsonl
+
+# View first comparison
+head -1 src/openwebui/data/arena_votes.jsonl | jq '.'
+
+# Count total comparisons
+curl -s http://localhost:8001/arena/comparisons | jq '.total'
+
+# View in UI
+open http://localhost:8002
+```
+
+## Troubleshooting
+
+### Seeded comparisons don't appear in UI
+
+**Problem:** You seeded data but it's not showing in http://localhost:8002
+
+**Solutions:**
+1. Check file location: `ls -l src/openwebui/data/arena_votes.jsonl`
+2. Verify file has content: `wc -l src/openwebui/data/arena_votes.jsonl`
+3. Check API returns data: `curl http://localhost:8001/arena/comparisons | jq '.total'`
+4. Restart API if needed: `docker restart arena-api`
+5. Clear browser cache: `Cmd+Shift+Delete` (Chrome)
+
+### "File not found" error
+
+**Problem:** Seeding script fails with path error
+
+**Solution:** Run from workspace root:
+```bash
+cd /Users/browse/FU_Chatbot_RD_Zitho
+python scripts/arena_seed_external.py
+```
+
+### API returns error 500
+
+**Problem:** Seeding via API fails
+
+**Solution:**
+1. Check API is running: `curl http://localhost:8001/health`
+2. Check logs: `docker logs arena-api | tail -20`
+3. Verify request format matches endpoint documentation
+4. Check model configuration in `config/models.yaml`
+
+### Chatbot API times out during seeding
+
+**Problem:** External chatbot doesn't respond in time
+
+**Solutions:**
+1. Increase timeout: Edit `scripts/arena_seed_external.py`, change `timeout=60` to higher value
+2. Check chatbot is running: `curl -v http://localhost:9001/api/chat`
+3. Reduce question count for testing
+4. Check network connectivity
+
+## File Format Reference
+
+### JSONL Format (Arena Votes File)
+
+Each line is a JSON object (no nested arrays):
+
+```json
+{
+  "id": "uuid-or-incrementing-id",
+  "question": "User question",
+  "model_a": "model name",
+  "model_b": "model name",
+  "response_a": "Full text response from model A",
+  "response_b": "Full text response from model B",
+  "vote": null,
+  "vote_timestamp": null,
+  "comment": null,
+  "subset_id": 1
+}
+```
+
+**Required fields:** `question`, `model_a`, `model_b`, `response_a`, `response_b`
+
+**Optional fields:** `id`, `vote`, `vote_timestamp`, `comment`, `subset_id`
+
+### Questions File Format
+
+For `scripts/arena_seed_external.py`, use plain text:
+
+```
+One question per line
+You can have UTF-8 characters like: äöüß
+Questions should be actual queries, not answers
+No JSON, no special formatting needed
+```
+
+## Best Practices
+
+1. **Always verify the file location:**
+   ```bash
+   ls -l src/openwebui/data/arena_votes.jsonl
+   ```
+
+2. **Create backups before bulk operations:**
+   ```bash
+   cp src/openwebui/data/arena_votes.jsonl src/openwebui/data/arena_votes.jsonl.backup
+   ```
+
+3. **Test with small batches first:**
+   - Create 5-10 test questions
+   - Run seeding script
+   - Verify in UI
+   - Then proceed with larger batches
+
+4. **Validate question quality:**
+   - Questions should be specific and answerable
+   - Avoid yes/no questions (harder to evaluate)
+   - Use natural language (not technical jargon)
+
+5. **Document your seeding:**
+   - Note when you seeded data
+   - Document which questions came from where
+   - Keep question source files for reproducibility
+
+## Automation
+
+For continuous seeding (e.g., from a queue), create a wrapper:
+
+```python
+#!/usr/bin/env python3
+import subprocess
+import time
+from pathlib import Path
+
+while True:
+    # Check for new questions
+    questions_file = Path("data/fixed_questions.txt")
+    if questions_file.exists() and questions_file.stat().st_size > 0:
+        # Seed them
+        result = subprocess.run(
+            ["python", "scripts/arena_seed_external.py"],
+            capture_output=True,
+            text=True
+        )
+        
+        # Log results
+        print(f"Seeding completed at {time.time()}")
+        print(result.stdout)
+        
+        # Clear file for next batch
+        questions_file.unlink()
+    
+    # Wait before checking again
+    time.sleep(300)  # 5 minutes
+```
+
+## See Also
+
+- [README.md](../README.md) - Quick start guide
+- [ENVIRONMENT.md](ENVIRONMENT.md) - Configuration variables
+- `scripts/arena_seed_external.py` - Seeding script source code
+- `src/openwebui/voting_system.py` - Storage engine documentation
