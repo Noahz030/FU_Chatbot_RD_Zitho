@@ -133,6 +133,7 @@ def index():
         let totalInSubset = 0;
         let votedInSubset = 0;
         let votedSet = new Set();
+        let votedQuestionSet = new Set();
         let sessionId = null;
         let csrfToken = null;  // CSRF token for vote submission protection
         let prefetchQueue = [];  // Queue of pre-generated comparisons (up to MAX_PREFETCH)
@@ -140,6 +141,7 @@ def index():
         // Question ordering to avoid duplicates within a subset
         let questionOrder = [];
         let questionCursor = 0;
+        let currentQuestionText = '';
 
         const MAX_PREFETCH = 20;  // Large buffer for uninterrupted voting experience
         const REFILL_THRESHOLD = 12;  // Refill at 60% capacity (aggressive refill)
@@ -180,10 +182,14 @@ def index():
         }
 
         function nextQuestion() {
-            if (questionCursor >= questionOrder.length) return null;
-            const q = questionOrder[questionCursor];
-            questionCursor += 1;
-            return q;
+            while (questionCursor < questionOrder.length) {
+                const q = questionOrder[questionCursor];
+                questionCursor += 1;
+                if (!votedQuestionSet.has(q)) {
+                    return q;
+                }
+            }
+            return null;
         }
 
         function ensureSessionId() {
@@ -228,6 +234,30 @@ def index():
             assignedSubset = subset;
         }
 
+        function getVotedQuestionsKey() {
+            return 'arena_voted_questions_' + (sessionId || '') + '_' + (assignedSubset || '');
+        }
+
+        function loadVotedQuestions() {
+            try {
+                const raw = localStorage.getItem(getVotedQuestionsKey());
+                if (raw) {
+                    const arr = JSON.parse(raw);
+                    votedQuestionSet = new Set(Array.isArray(arr) ? arr : []);
+                } else {
+                    votedQuestionSet = new Set();
+                }
+            } catch (e) {
+                votedQuestionSet = new Set();
+            }
+        }
+
+        function saveVotedQuestions() {
+            try {
+                localStorage.setItem(getVotedQuestionsKey(), JSON.stringify(Array.from(votedQuestionSet)));
+            } catch (e) {}
+        }
+
         function shouldRandomizeSubsets() {
             // Enable via URL param: ?randomize_subsets=1
             const params = new URLSearchParams(window.location.search);
@@ -264,6 +294,7 @@ def index():
             // Subset zuweisen falls noch nicht geschehen
             await assignSubsetIfNeeded();
             sessionId = ensureSessionId();
+            loadVotedQuestions();
             
             // Fetch CSRF token for session
             await fetchCsrfToken(sessionId);
@@ -500,7 +531,9 @@ def index():
                 }
                 
                 const subsetQuestions = cachedSubsetQuestions;
-                if ((!questionOrder || questionOrder.length === 0) && subsetQuestions && subsetQuestions.length > 0) {
+                // Only initialize question order if it hasn't been initialized yet (questionCursor === 0)
+                // Otherwise we would reset progress and show duplicate questions!
+                if ((!questionOrder || questionOrder.length === 0) && subsetQuestions && subsetQuestions.length > 0 && questionCursor === 0) {
                     initQuestionOrder(subsetQuestions);
                 }
                 
@@ -528,7 +561,14 @@ def index():
                 }
                 
                 // Pick the next deterministic question from subset order
-                const question = nextQuestion();
+                let question = nextQuestion();
+                if (!question && subsetQuestions && subsetQuestions.length > 0) {
+                    const remaining = subsetQuestions.filter(q => !votedQuestionSet.has(q));
+                    if (remaining.length > 0) {
+                        initQuestionOrder(remaining);
+                        question = nextQuestion();
+                    }
+                }
                 if (!question) {
                     container.innerHTML = `
                         <div class="completion" style="background: white; padding: 40px; border-radius: 8px; text-align: center;">
@@ -639,6 +679,7 @@ def index():
 
             const comp = unvoted[0];
             selectedVote = null;
+            currentQuestionText = comp.question || '';
             
             // Progress-Indicator mit verbleibenden Fragen
             const totalShown = totalInSubset > 0 ? totalInSubset : 15;  // Default 15 wenn nicht gesetzt
@@ -752,19 +793,37 @@ def index():
                     selectedVote = null;
                     votedSet.add(String(id));
                     votedInSubset++;
+                    if (currentQuestionText) {
+                        votedQuestionSet.add(currentQuestionText);
+                        saveVotedQuestions();
+                    }
                     
                     // Update CSRF token from response (rotated after vote)
                     if (data.csrf_token) {
                         csrfToken = data.csrf_token;
                     }
                     
+                    // Show brief visual confirmation of successful vote
+                    const container = document.getElementById('container');
+                    container.innerHTML = `
+                        <div style="background: white; padding: 40px; border-radius: 8px; text-align: center;">
+                            <h2 style="font-size: 32px; margin: 0 0 15px;">✓ Vote gespeichert!</h2>
+                            <p style="font-size: 16px; color: #666;">
+                                ${votedInSubset} von ${totalInSubset} Fragen bewertet
+                            </p>
+                            <div class="loading" style="margin-top: 20px;">Lade nächste Frage...</div>
+                        </div>
+                    `;
+                    
                     // Trigger prefetch refill immediately after vote (aggressive refilling)
                     if (prefetchQueue.length <= REFILL_THRESHOLD) {
                         fillPrefetchQueue();
                     }
                     
-                    // On-demand mode: Generiere nächste Frage statt zu laden
-                    await generateOnDemandComparison();
+                    // Brief delay to show confirmation, then generate next comparison
+                    setTimeout(async () => {
+                        await generateOnDemandComparison();
+                    }, 800);
                 } else {
                     const errData = await resp.json().catch(() => ({}));
                     if (resp.status === 403) {
