@@ -40,5 +40,5 @@ Die folgenden Dateien sind aktuell und aktiv:
 Falls diese Dateien nicht mehr benötigt werden, können sie sicher gelöscht werden. Vorher sollte sichergestellt werden, dass kein Code mehr darauf referenziert.
 
 ```bash
-rm -rf src/openwebui/deprecated/
+rm -rf archive/openwebui/deprecated/
 ```

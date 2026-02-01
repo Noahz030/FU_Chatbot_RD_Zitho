@@ -9,7 +9,7 @@ Diese Dateien werden **nicht mehr von der Arena verwendet**.
 ### `fixed_questions.json` (Dec 28, 2025)
 - **Inhalt:** 62 alte Evaluierungs-Fragen
 - **Status:** Veraltet, abgelöst durch `arena_questions.py` (Python-Katalog)
-- **Grund:** Die Arena nutzt jetzt direkt die Fragen aus `src/openwebui/arena_questions.py` (hardcoded, 4 Subsets à ~15 Fragen)
+- **Grund:** Die Arena nutzt jetzt direkt die Fragen aus `src/arena/arena_questions.py` (hardcoded, 4 Subsets à ~15 Fragen)
 
 ### `fixed_questions_for_seeding.json` (Jan 14, 2026)
 - **Inhalt:** 60 Seeding-spezifische Fragen

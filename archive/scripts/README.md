@@ -14,7 +14,7 @@ These scripts were part of earlier Arena development phases but have been supers
 **`arena_seed_external.py`** (4.0 KB)
 - Purpose: Seed Arena with pre-generated comparisons between v1 and v1-improved
 - Status: Obsolete - Current architecture generates answers on-demand via API
-- Reference: `src/openwebui/openwebui_api_llm.py` handles generation now
+- Reference: `src/arena/openwebui_api_llm.py` handles generation now
 
 **`arena_seed_with_llm.py`** (9.3 KB)
 - Purpose: LLM-based seeding from CSV/JSON input files
@@ -69,7 +69,7 @@ The Arena now uses **on-demand answer generation** instead of pre-seeding:
 5. Both answers generated, cached in `arena_votes.jsonl` with `is_generated_on_demand=True`
 
 ### Fixed Question Set
-- **Source:** `src/openwebui/arena_questions.py`
+- **Source:** `src/arena/arena_questions.py`
 - **Total:** 60 questions (same set used for Ragas evaluation)
 - **Organization:** 4 subsets × 15 questions each
 - **Assignment:** Round-robin by vote count (new users get subset with fewest votes)

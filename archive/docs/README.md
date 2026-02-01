@@ -10,8 +10,8 @@ Diese Datei beschreibt den **alten Pre-Seeding Workflow** von Januar 2026.
 
 Das Arena-System wurde zwischen Jan 22-28 2026 umgestellt auf:
 - ✅ **On-Demand Generation** (pro Session)
-- ✅ **Hardcoded Question Catalog** (`src/openwebui/arena_questions.py`)
-- ✅ **Live Response Generation** (`openwebui_api_llm.py`)
+- ✅ **Hardcoded Question Catalog** (`src/arena/arena_questions.py`)
+- ✅ **Live Response Generation** (`src/arena/openwebui_api_llm.py`)
 
 **SEEDING.md beschrieb den alten Workflow:**
 - ❌ Pre-Generation aller Antworten
@@ -29,8 +29,8 @@ Falls du die alte Seeding-Logik brauchst (Referenz, Legacy-System):
 
 Für aktuelle Arena-Features siehe:
 - `VOTING.md` - Arena Dokumentation
-- `src/openwebui/arena_questions.py` - Question Catalog
-- `src/openwebui/openwebui_api_llm.py` - API Implementation
+- `src/arena/arena_questions.py` - Question Catalog
+- `src/arena/openwebui_api_llm.py` - API Implementation
 
 ### Archivierungsdatum
 

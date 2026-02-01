@@ -14,11 +14,12 @@ services:
       ENVIRONMENT: "LOCAL"  # Set to LOCAL for testing (no API key), PRODUCTION for deployment
       USE_KEY_VAULT: "false"  # Disable Key Vault for local testing
       # Arena-specific
-      STORAGE_PATH: /app/src/openwebui/data/arena_votes.jsonl
+      STORAGE_PATH: /app/src/arena/data/arena_votes.jsonl
+      ARENA_DATA_DIR: /app/src/arena/data
       # CORS Origins from environment
       CORS_ORIGINS: "${CORS_ORIGINS:-*}"
     volumes:
-      - ./src/openwebui/data:/app/src/openwebui/data
+      - ./src/arena/data:/app/src/arena/data
     ports:
       - "0.0.0.0:8001:8001"  # Allow external access for local testing
     restart: unless-stopped
