@@ -744,7 +744,7 @@ def call_assistant(assistant: Any, question: str) -> str:
 
 
 @app.post("/arena/generate")
-async def generate_comparison(request: GenerateRequest):
+async def generate_comparison(request: GenerateRequest, http_request: Request):
     """Generiert on-demand frische Antworten zwischen zwei Assistenten-Versionen
     
     Für maximale Varianz in der Evaluation: JEDE Anfrage generiert neue Antworten,
@@ -760,6 +760,10 @@ async def generate_comparison(request: GenerateRequest):
     Dies ermöglicht einen blind A/B Test zwischen zwei kompletten Chatbot-Systemen.
     """
     logger.info(f"🔄 On-demand generating comparison for: {request.question[:50]}...")
+    
+    # Rate limiting: Check both session and IP limits
+    client_ip = get_client_ip(http_request)
+    check_generation_rate_limit(request.session_id, client_ip)
     
     try:
         # Get both assistant versions
@@ -853,7 +857,7 @@ def get_csrf_token(session_id: str = Query(...)):
 
 
 @app.post("/arena/vote")
-def submit_vote(request: VoteRequest, x_session_id: Optional[str] = Header(default=None)):
+def submit_vote(request: VoteRequest, http_request: Request, x_session_id: Optional[str] = Header(default=None)):
     """Speichert einen Vote"""
     # Prefer session_id from request body, fallback to header
     session_id = request.session_id or x_session_id
@@ -865,6 +869,10 @@ def submit_vote(request: VoteRequest, x_session_id: Optional[str] = Header(defau
     import sys
     print(f"[VOTE DEBUG] session_id: {session_id[:16]}...", file=sys.stderr)
     print(f"[VOTE DEBUG] csrf_token: {request.csrf_token[:16] if request.csrf_token else 'NONE'}...", file=sys.stderr)
+    
+    # Rate limiting: Check both session and IP limits
+    client_ip = get_client_ip(http_request)
+    check_generation_rate_limit(session_id, client_ip)
     
     # CSRF Token Validation
     if not request.csrf_token or not validate_csrf_token(session_id, request.csrf_token):
