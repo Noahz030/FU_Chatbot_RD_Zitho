@@ -729,7 +729,7 @@ def index():
             }
             
             try {
-                const honeypot = document.getElementById('honeypot_website');
+
                 const resp = await fetch(API + '/arena/vote', {
                     method: 'POST',
                     headers: {
