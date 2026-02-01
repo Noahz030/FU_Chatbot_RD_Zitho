@@ -86,12 +86,13 @@ class ModelRegistry:
 models:
   kicampus-v1:
     name: "KI-Campus (Original)"
-    description: "Original chatbot with 10-message context window"
+    description: "Original chatbot version via HTTPProxyAssistant"
     enabled: true
     params:
-      context_window: 10
-      model_enum: "gpt4"
-    source: "src.llm.assistant:KICampusAssistant"
+      api_base_url: "http://chatbot-original:80"
+      api_key: "arena-test-key"
+      timeout: 120
+    source: "src.llm.http_proxy_assistant:HTTPProxyAssistant"
     release_date: "2025-01-01"
     tags:
       - "original"
@@ -100,12 +101,14 @@ models:
 
   kicampus-v1-improved:
     name: "KI-Campus (Improved)"
-    description: "Enhanced chatbot with 15-message context window"
+    description: "Improved chatbot version via HTTPProxyAssistant"
     enabled: true
     params:
-      context_window: 15
-      model_enum: "gpt4"
-    source: "src.llm.assistant:KICampusAssistant"
+      api_base_url: "http://chatbot-improved:80"
+      api_key: "arena-test-key"
+      timeout: 120
+      use_thread_api: true
+    source: "src.llm.http_proxy_assistant:HTTPProxyAssistant"
     release_date: "2025-06-01"
     tags:
       - "improved"
