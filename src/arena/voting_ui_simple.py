@@ -141,9 +141,9 @@ def index():
         let questionOrder = [];
         let questionCursor = 0;
 
-        const MAX_PREFETCH = 10;  // Larger buffer for faster UX
-        const REFILL_THRESHOLD = 4;  // Refill earlier
-        const PREFETCH_CONCURRENCY = 4;  // Slightly more parallelism for faster refill
+        const MAX_PREFETCH = 20;  // Large buffer for uninterrupted voting experience
+        const REFILL_THRESHOLD = 12;  // Refill at 60% capacity (aggressive refill)
+        const PREFETCH_CONCURRENCY = 6;  // More parallelism for faster queue refill
         const PREFETCH_DELAY_MS = 100;  // Small spacing between batch starts
 
         function hashStringToSeed(str) {
