@@ -117,7 +117,7 @@ def index():
     </style>
 </head>
 <body>
-    <h1>Arena Vergleich</h1>
+    <h1>KI Campus - Chatbot Arena</h1>
     
     <div id="container">
         <div class="loading">⏳ Lade Vergleiche...</div>
@@ -206,10 +206,30 @@ def index():
             return sid;
         }
 
+        function handleSessionExpired() {
+            try {
+                localStorage.removeItem('arena_session_id');
+                localStorage.removeItem('arena_subset');
+                if (sessionId && assignedSubset) {
+                    localStorage.removeItem(getVotedQuestionsKey());
+                }
+            } catch (e) {}
+            sessionId = null;
+            assignedSubset = null;
+            votedSet = new Set();
+            votedQuestionSet = new Set();
+            alert('⚠️ Session abgelaufen. Die Seite wird neu geladen.');
+            window.location.reload();
+        }
+
         async function fetchCsrfToken(sessionId) {
             // Fetch CSRF token for current session
             try {
                 const resp = await fetch(API + '/arena/csrf-token?session_id=' + encodeURIComponent(sessionId));
+                if (resp.status === 401) {
+                    handleSessionExpired();
+                    return;
+                }
                 if (!resp.ok) throw new Error('Failed to fetch CSRF token');
                 const data = await resp.json();
                 csrfToken = data.csrf_token;
@@ -309,7 +329,11 @@ def index():
                     method: 'GET',
                     headers: { 'Accept': 'application/json' }
                 });
-                
+
+                if (votedResp.status === 401) {
+                    handleSessionExpired();
+                    return;
+                }
                 if (!votedResp.ok) throw new Error('HTTP ' + votedResp.status + ' ' + votedResp.statusText);
                 
                 const votedData = await votedResp.json();
@@ -607,6 +631,11 @@ def index():
                 });
                 
                 console.log('Generate response:', resp.status);
+
+                if (resp.status === 401) {
+                    handleSessionExpired();
+                    return;
+                }
                 
                 if (!resp.ok) {
                     const errData = await resp.json().catch(() => ({}));
@@ -787,7 +816,12 @@ def index():
                         honeypot: honeypot ? honeypot.value : null  // Send honeypot value
                     })
                 });
-                
+
+                if (resp.status === 401) {
+                    handleSessionExpired();
+                    return;
+                }
+
                 if (resp.ok) {
                     const data = await resp.json();
                     selectedVote = null;

@@ -201,6 +201,47 @@ def validate_csrf_token(session_id: str, token: str) -> bool:
     print(f"[CSRF DEBUG] Token match: {result}", file=sys.stderr)
     return result
 
+def _expire_session(session_id: str, request: Optional[Request] = None) -> None:
+    """Expire a session and clear related cached state."""
+    _session_registry.pop(session_id, None)
+    _csrf_token_cache.pop(session_id, None)
+    # Remove rate-limit entries for this session
+    for key in list(_rate_limit_cache.keys()):
+        if key[0] == session_id:
+            _rate_limit_cache.pop(key, None)
+    write_audit_event(
+        "session_expired",
+        session_id=session_id,
+        request=request,
+        detail="Session TTL exceeded"
+    )
+
+def _cleanup_sessions(now: float) -> None:
+    expired = [
+        sid for sid, info in _session_registry.items()
+        if now - info.get("created_at", now) > SESSION_TTL_SECONDS
+    ]
+    for sid in expired:
+        _expire_session(sid)
+
+def require_active_session(session_id: str, request: Optional[Request] = None) -> None:
+    """Ensure session is active and not expired; otherwise raise HTTP 401."""
+    now = time.time()
+    info = _session_registry.get(session_id)
+    if info:
+        if now - info.get("created_at", now) > SESSION_TTL_SECONDS:
+            _expire_session(session_id, request=request)
+            raise HTTPException(
+                status_code=401,
+                detail="Session expired. Please reload to start a new session."
+            )
+        info["last_seen"] = now
+    else:
+        _session_registry[session_id] = {"created_at": now, "last_seen": now}
+
+    if len(_session_registry) > SESSION_CLEANUP_THRESHOLD:
+        _cleanup_sessions(now)
+
 
 def rotate_csrf_token(session_id: str) -> str:
     """Rotate CSRF token after successful vote to prevent token reuse.
@@ -228,6 +269,12 @@ RATE_LIMIT_CLEANUP_THRESHOLD = 10000  # Cleanup cache if size exceeds this
 # CSRF token cache for voting endpoints
 # Format: {session_id: csrf_token}
 _csrf_token_cache: dict[str, str] = {}
+
+# Session registry with TTL (server-side session expiry)
+# Format: {session_id: {"created_at": float, "last_seen": float}}
+_session_registry: dict[str, dict[str, float]] = {}
+SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "86400"))  # 24 hours default
+SESSION_CLEANUP_THRESHOLD = int(os.getenv("SESSION_CLEANUP_THRESHOLD", "10000"))
 
 # Lazy-Loading der Assistenten via ModelRegistry
 # Assistants are loaded on-demand to avoid failures during startup
@@ -771,6 +818,8 @@ async def generate_comparison(request: GenerateRequest, http_request: Request):
     Dies ermöglicht einen blind A/B Test zwischen zwei kompletten Chatbot-Systemen.
     """
     logger.info(f"🔄 On-demand generating comparison for: {request.question[:50]}...")
+
+    require_active_session(request.session_id, request=http_request)
     
     # Honeypot detection: if filled, it's a bot
     if request.honeypot:
@@ -891,6 +940,7 @@ async def generate_comparison(request: GenerateRequest, http_request: Request):
 @app.get("/arena/csrf-token")
 def get_csrf_token(session_id: str = Query(...)):
     """Liefert einen CSRF-Token für die Session"""
+    require_active_session(session_id)
     token = get_csrf_token_for_session(session_id)  # Generate or retrieve cached token
     return {
         "csrf_token": token,
@@ -906,6 +956,8 @@ def submit_vote(request: VoteRequest, http_request: Request, x_session_id: Optio
     
     if not session_id:
         raise HTTPException(status_code=400, detail="Session ID required (in body or X-Session-ID header)")
+
+    require_active_session(session_id, request=http_request)
     
     # Debug
     import sys
@@ -992,6 +1044,7 @@ def submit_vote(request: VoteRequest, http_request: Request, x_session_id: Optio
 @app.get("/arena/voted")
 def get_voted(session_id: str = Query(...)):
     """Liefert die comparison_ids, die diese Session bereits gevoted hat"""
+    require_active_session(session_id)
     data_dir = get_data_dir()
     user_votes_file = data_dir / "arena_user_votes.jsonl"
     
