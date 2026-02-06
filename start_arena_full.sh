@@ -29,7 +29,7 @@ echo "  - Original: http://localhost:9001"
 echo "  - Improved: http://localhost:9002"
 echo ""
 
-docker compose -f docker-compose.chatbots.yml up -d chatbot-original chatbot-improved
+docker compose -f docker/docker-compose.chatbots.yml up -d chatbot-original chatbot-improved
 
 echo "⏳ Waiting for chatbots to be healthy..."
 sleep 10
@@ -57,7 +57,7 @@ echo "  - Arena API:  http://localhost:8001"
 echo "  - Arena UI:   http://localhost:8002"
 echo ""
 
-docker compose -f docker-compose.prod.yml up -d arena-api arena-ui
+docker compose -f docker/docker-compose.prod.yml up -d arena-api arena-ui
 
 echo "⏳ Waiting for Arena to be healthy..."
 sleep 5

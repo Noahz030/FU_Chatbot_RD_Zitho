@@ -69,3 +69,7 @@ secring.*
 
 voting_ui.log
 voting_ui.pid
+
+# VM reference (local/private)
+docs/VM-REQUIREMENTS.md
+

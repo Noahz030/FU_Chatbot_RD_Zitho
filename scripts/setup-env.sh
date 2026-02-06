@@ -233,7 +233,7 @@ if validate_env; then
     echo "     ./scripts/init-ssl.sh ${DOMAIN_NAME} admin@example.com"
     echo ""
     echo "  4. Start Docker services:"
-    echo "     docker compose -f docker-compose.prod.yml up -d"
+    echo "     docker compose -f docker/docker-compose.prod.yml up -d"
     echo ""
     echo "IMPORTANT: Keep .env file secure!"
     echo "  chmod 600 .env"

@@ -33,9 +33,10 @@ else:
 @app.get("/", response_class=HTMLResponse)
 def index():
     """Einfaches Voting UI"""
-    # API URL: Use direct API endpoint for direct HTTP access (port 8002)
-    # JavaScript will use this or fall back to relative URLs for HTTPS/nginx
-    api_override = "http://localhost:8001"
+    # API URL: Leave empty for intelligent JS detection
+    # Works over HTTPS (nginx) with relative URLs
+    # Also works over HTTP direct with fallback logic
+    api_override = ""
     html = """
 <!DOCTYPE html>
 <html>
@@ -114,18 +115,44 @@ def index():
             color: #999;
             padding: 20px;
         }
+        .notice {
+            background: #fff;
+            border: 1px solid #e6e6e6;
+            border-radius: 8px;
+            padding: 12px 14px;
+            margin: 12px 0 18px;
+            font-size: 13px;
+            line-height: 1.5;
+            color: #444;
+        }
+        .notice a { color: #1f5fbf; text-decoration: none; }
+        .notice a:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
     <h1>KI Campus - Chatbot Arena</h1>
+
+    <div class="notice">
+        Die Chatbot Arena ermöglicht den Vergleich von KI‑Antworten zu identischen Fragen.
+        Deine Bewertungen helfen, die Qualität der Modelle zu verbessern.
+        Mehr Informationen zur Verwendung der Daten und zum Datenschutz findest du unter
+        <a href="https://ki-campus.org/impressum" target="_blank" rel="noopener noreferrer">Impressum</a>
+        und der
+        <a href="https://ki-campus.org/datenschutz" target="_blank" rel="noopener noreferrer">Datenschutzerklärung</a>.
+    </div>
     
     <div id="container">
         <div class="loading">⏳ Lade Vergleiche...</div>
     </div>
 
     <script>
-        // API base: use environment-provided default or fallback to localhost
-        const API = "__API_OVERRIDE__";
+        // API base: allow override for direct UI (8002) vs. nginx proxy
+        const API_OVERRIDE = "__API_OVERRIDE__";
+        const API = (API_OVERRIDE && API_OVERRIDE.trim() !== "")
+            ? API_OVERRIDE.replace(/\/$/, '')
+            : (window.location.port === "8002"
+                ? "http://localhost:8001"
+                : "");
         let comparisons = [];
         let currentIndex = 0;
         let selectedVote = null;
@@ -973,11 +1000,30 @@ def user_votes():
             return `<span class="pill ${cls}">${label}</span>`;
         }
 
+        function formatBerlin(ts) {
+            if (!ts) return '';
+            let iso = ts;
+            if (!/[zZ]|[+-]\d\d:\d\d$/.test(iso)) {
+                iso = iso + 'Z';
+            }
+            const d = new Date(iso);
+            if (isNaN(d.getTime())) return ts;
+            return new Intl.DateTimeFormat('de-DE', {
+                timeZone: 'Europe/Berlin',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            }).format(d);
+        }
+
         function renderTable() {
             const tbody = document.querySelector('tbody');
             tbody.innerHTML = filtered.map(v => `
                 <tr>
-                    <td class="nowrap muted">${(v.timestamp||'').replace('T',' ')}</td>
+                    <td class="nowrap muted">${formatBerlin(v.timestamp)}</td>
                     <td><span class="session" title="${v.session_id}">${(v.session_id||'').slice(0,8)}...</span></td>
                     <td class="muted" style="font-size:11px;" title="${v.comparison_id}">${(v.comparison_id||'').slice(0,12)}...</td>
                     <td>${pill(v.vote)}</td>
@@ -1110,6 +1156,7 @@ def results():
                 console.log('Comparisons count:', data.comparisons ? data.comparisons.length : 0);
                 
                 all = data.comparisons || [];
+                all.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
                 console.log('Loaded comparisons:', all.length);
                 
                 applyFilters();
@@ -1127,7 +1174,7 @@ def results():
             filtered = all.filter(c => {
                 const voted = !!c.vote;
                 const voteOk = sel.value === 'all' || (sel.value === 'voted' && voted) || (sel.value === 'unvoted' && !voted);
-                const text = ((c.question||'') + ' ' + (c.answer_a||'') + ' ' + (c.answer_b||'')).toLowerCase();
+                const text = ((c.id||'') + ' ' + (c.session_id||'') + ' ' + (c.question||'') + ' ' + (c.answer_a||'') + ' ' + (c.answer_b||'')).toLowerCase();
                 const searchOk = !q || text.includes(q);
                 return voteOk && searchOk;
             });
@@ -1143,11 +1190,32 @@ def results():
 
         function truncate(t, n=140) { if (!t) return ''; return t.length>n ? t.slice(0,n)+'…' : t; }
 
+        function formatBerlin(ts) {
+            if (!ts) return '';
+            let iso = ts;
+            if (!/[zZ]|[+-]\d\d:\d\d$/.test(iso)) {
+                iso = iso + 'Z';
+            }
+            const d = new Date(iso);
+            if (isNaN(d.getTime())) return ts;
+            return new Intl.DateTimeFormat('de-DE', {
+                timeZone: 'Europe/Berlin',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            }).format(d);
+        }
+
         function renderTable() {
             const tbody = document.querySelector('tbody');
             tbody.innerHTML = filtered.map(c => `
                 <tr>
-                    <td class="nowrap muted">${(c.timestamp||'').replace('T',' ')}</td>
+                    <td class="nowrap muted">${formatBerlin(c.timestamp)}</td>
+                    <td class="nowrap muted">${c.id || ''}</td>
+                    <td class="nowrap muted">${c.session_id || ''}</td>
                     <td class="q">${truncate(c.question, 160)}</td>
                     <td class="ans">
                         <strong style="color: #444; font-weight: 600;">${(c.actual_model_a || c.model_a || 'Modell A').substring(0, 30)}</strong><br>
@@ -1158,7 +1226,7 @@ def results():
                         ${truncate(c.actual_answer_b || c.answer_b, 160)}
                     </td>
                     <td>${pill(c.vote)}</td>
-                    <td class="nowrap muted">${c.vote_timestamp ? c.vote_timestamp.replace('T',' ') : ''}</td>
+                    <td class="nowrap muted">${formatBerlin(c.vote_timestamp)}</td>
                     <td class="nowrap muted">${c.subset_id || (currentSubset !== 'all' ? currentSubset : '-')}</td>
                 </tr>
             `).join('');
@@ -1168,7 +1236,7 @@ def results():
 
 
         function exportCSV() {
-            const header = ['id','timestamp','question','actual_model_a','actual_answer_a','actual_model_b','actual_answer_b','vote','vote_timestamp','subset_id'];
+            const header = ['id','session_id','timestamp','question','actual_model_a','actual_answer_a','actual_model_b','actual_answer_b','vote','vote_timestamp','subset_id'];
             const rows = filtered.map(c => header.map(h => {
                 let val = (c[h] || '').toString();
                 val = val.split('\\n').join(' ');
@@ -1204,7 +1272,7 @@ def results():
             <option value="voted">Nur gevotet</option>
             <option value="unvoted">Nur offen</option>
         </select>
-        <input id="search" type="search" placeholder="Suche in Frage/Antworten" oninput="applyFilters()"/>
+        <input id="search" type="search" placeholder="Suche in Frage/Antworten/IDs" oninput="applyFilters()"/>
         <button onclick="exportCSV()">CSV Export</button>
         <a href="/user-votes" style="margin-left:auto;padding:8px 12px;text-decoration:none;background:#4a90e2;color:white;border-radius:4px;">👥 User-Votes ansehen</a>
     </div>
@@ -1212,6 +1280,8 @@ def results():
         <thead>
             <tr>
                 <th>Erstellt</th>
+                <th>Comparison-ID</th>
+                <th>Session-ID</th>
                 <th>Frage</th>
                 <th>Antwort A (Modell + Text)</th>
                 <th>Antwort B (Modell + Text)</th>
@@ -1221,7 +1291,7 @@ def results():
             </tr>
         </thead>
         <tbody>
-            <tr><td colspan="7" class="muted">Lade…</td></tr>
+            <tr><td colspan="9" class="muted">Lade…</td></tr>
         </tbody>
     </table>
 </body>

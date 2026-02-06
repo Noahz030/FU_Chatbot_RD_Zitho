@@ -905,6 +905,7 @@ async def generate_comparison(request: GenerateRequest, http_request: Request):
             model_b="kicampus-v1-improved",
             answer_b=answer_b,
             subset_id=request.subset_id,
+            session_id=request.session_id,
             is_generated_on_demand=True,
         )
         

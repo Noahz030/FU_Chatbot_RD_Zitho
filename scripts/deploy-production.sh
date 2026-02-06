@@ -21,7 +21,7 @@
 # Prerequisites:
 #   - SSH access to production VM
 #   - Docker and docker-compose on VM
-#   - .env.production configured
+#   - .env.production configured (production secrets; Key Vault disabled)
 #
 # ============================================================================
 
@@ -35,7 +35,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 # Configuration
-COMPOSE_FILE="docker-compose.prod.yml"
+COMPOSE_FILE="docker/docker-compose.prod.yml"
 ENV_FILE=".env.production"
 BACKUP_DIR="./backups"
 
@@ -59,6 +59,8 @@ print_usage() {
     echo "  logs       - View logs"
     echo "  backup     - Backup arena_votes.jsonl"
     echo "  rollback   - Rollback to previous version"
+    echo ""
+    echo "Env: uses .env.production (not .env)"
     echo ""
 }
 

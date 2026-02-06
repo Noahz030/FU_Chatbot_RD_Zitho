@@ -101,7 +101,7 @@ else
     # Check if nginx is running
     if docker ps | grep -q fu-arena-nginx; then
         echo -e "${YELLOW}⚠️  Nginx is already running, will restart for certificate challenge${NC}"
-        docker compose -f docker-compose.prod.yml stop nginx
+        docker compose -f docker/docker-compose.prod.yml stop nginx
     fi
     
     # Generate DH parameters if not exists
@@ -113,14 +113,14 @@ else
     
     # Start nginx for ACME challenge
     echo -e "${BLUE}🚀 Starting nginx for Let's Encrypt ACME challenge...${NC}"
-    docker compose -f docker-compose.prod.yml up -d nginx
+    docker compose -f docker/docker-compose.prod.yml up -d nginx
     
     # Wait for nginx to be ready
     sleep 5
     
     # Obtain certificate
     echo -e "${BLUE}📜 Requesting SSL certificate from Let's Encrypt...${NC}"
-    docker compose -f docker-compose.prod.yml run --rm certbot certonly \
+    docker compose -f docker/docker-compose.prod.yml run --rm certbot certonly \
         --webroot \
         --webroot-path=/var/www/certbot \
         --email $CERTBOT_EMAIL \
@@ -144,7 +144,7 @@ fi
 
 # Reload nginx
 echo -e "${BLUE}🔄 Reloading nginx with new certificate...${NC}"
-docker compose -f docker-compose.prod.yml restart nginx
+docker compose -f docker/docker-compose.prod.yml restart nginx
 
 # Wait and test
 sleep 3
@@ -152,7 +152,7 @@ if docker ps | grep -q fu-arena-nginx; then
     echo -e "${GREEN}✓ Nginx reloaded successfully${NC}"
 else
     echo -e "${RED}❌ Nginx failed to start${NC}"
-    docker compose -f docker-compose.prod.yml logs nginx
+    docker compose -f docker/docker-compose.prod.yml logs nginx
     exit 1
 fi
 
