@@ -120,7 +120,7 @@ else
     
     # Obtain certificate
     echo -e "${BLUE}📜 Requesting SSL certificate from Let's Encrypt...${NC}"
-    docker compose -f docker/docker-compose.prod.yml run --rm certbot certonly \
+    docker compose -f docker/docker-compose.prod.yml run --rm --entrypoint certbot certbot certonly \
         --webroot \
         --webroot-path=/var/www/certbot \
         --email $CERTBOT_EMAIL \
