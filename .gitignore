@@ -47,6 +47,7 @@ id_ed25519
 # SSL/TLS Private Keys (certificates are auto-generated, never commit)
 # Include BACKUPS - even .bak files contain sensitive keys!
 nginx/ssl/
+nginx/ssl-local/
 **/privkey.pem
 **/privkey.pem.bak*
 **/private.key

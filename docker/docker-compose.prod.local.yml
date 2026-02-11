@@ -1,0 +1,41 @@
+version: "3.9"
+
+# Local override for production stack testing (non-destructive)
+# - Uses .env.production.local
+# - Remaps ports to avoid conflicts
+# - Uses separate TLS assets under nginx/ssl-local
+# - Disables certbot by default
+
+services:
+  arena-api:
+    env_file:
+      - ../.env.production.local
+    container_name: fu-arena-api-localprod
+    environment:
+      ENVIRONMENT: "LOCAL"
+      USE_KEY_VAULT: "false"
+      DOMAIN_NAME: "localhost"
+      CORS_ORIGINS: "https://localhost:8443"
+      ARENA_API_KEY: "local-test-arena-key"
+      REST_API_KEYS: "[\"local-test-rest-key\"]"
+    ports:
+      - "18001:8001"
+
+  arena-ui:
+    container_name: fu-arena-ui-localprod
+    ports:
+      - "18002:8002"
+
+  nginx:
+    container_name: fu-arena-nginx-localprod
+    ports:
+      - "8080:80"
+      - "8443:443"
+    volumes:
+      - ../nginx/nginx.conf.prod:/etc/nginx/nginx.conf:ro
+      - ../nginx/dhparam.local.pem:/etc/nginx/dhparam.pem
+      - ../nginx/ssl-local:/etc/nginx/ssl:ro
+
+  certbot:
+    profiles: ["letsencrypt"]
+    container_name: fu-arena-certbot-localprod

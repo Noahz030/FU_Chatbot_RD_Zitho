@@ -130,15 +130,18 @@ def index():
     </style>
 </head>
 <body>
-    <h1>KI Campus - Chatbot Arena</h1>
+    <h1>KI-Campus | Chatbot-Arena</h1>
 
     <div class="notice">
-        Die Chatbot Arena ermöglicht den Vergleich von KI‑Antworten zu identischen Fragen.
+        Die Chatbot-Arena ermöglicht den Vergleich von KI‑Antworten zu identischen Fragen.
         Deine Bewertungen helfen, die Qualität der Modelle zu verbessern.
-        Mehr Informationen zur Verwendung der Daten und zum Datenschutz findest du unter
+        Um alle Quellenverweise in den Antworten der Chatbots vollumfänglich sehen zu können,
+        musst du in Moodle eingeloggt sein.
+        Mehr Informationen zur Verwendung der Daten und zum Datenschutz findest du im
         <a href="https://ki-campus.org/impressum" target="_blank" rel="noopener noreferrer">Impressum</a>
         und der
-        <a href="https://ki-campus.org/datenschutz" target="_blank" rel="noopener noreferrer">Datenschutzerklärung</a>.
+        <a href="https://ki-campus.org/datenschutz" target="_blank" rel="noopener noreferrer">Datenschutzerklärung</a>
+        des KI-Campus.
     </div>
     
     <div id="container">
