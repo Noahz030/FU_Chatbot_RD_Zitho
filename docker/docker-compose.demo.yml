@@ -1,0 +1,86 @@
+version: "3.9"
+
+# Demo stack: self-signed TLS, separate env file, no certbot
+services:
+  arena-api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    container_name: fu-arena-api-demo
+    env_file:
+      - ../.env.production.demo
+    environment:
+      PYTHONUNBUFFERED: "1"
+      ENVIRONMENT: "PRODUCTION"
+      USE_KEY_VAULT: "false"
+      STORAGE_PATH: /app/src/arena/data/arena_votes.jsonl
+      ARENA_DATA_DIR: /app/src/arena/data
+      CORS_ORIGINS: "${CORS_ORIGINS:-*}"
+    volumes:
+      - arena_data:/app/src/arena/data
+    ports:
+      - "0.0.0.0:8001:8001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8001/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - arena_network
+
+  arena-ui:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ui
+    container_name: fu-arena-ui-demo
+    environment:
+      API_BASE_URL: http://arena-api:8001
+      PYTHONUNBUFFERED: "1"
+      ARENA_API_BASE: "http://arena-api:8001"
+    depends_on:
+      arena-api:
+        condition: service_healthy
+    ports:
+      - "0.0.0.0:8002:8002"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8002/"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - arena_network
+
+  nginx:
+    image: nginx:stable-alpine
+    container_name: fu-arena-nginx-demo
+    depends_on:
+      arena-api:
+        condition: service_healthy
+      arena-ui:
+        condition: service_healthy
+    volumes:
+      - ../nginx/nginx.conf.prod:/etc/nginx/nginx.conf:ro
+      - ../nginx/dhparam.pem:/etc/nginx/dhparam.pem
+      - ../nginx/ssl:/etc/nginx/ssl:ro
+      - nginx_cache:/var/cache/nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    restart: unless-stopped
+    networks:
+      - arena_network
+    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+
+volumes:
+  arena_data:
+    driver: local
+  nginx_cache:
+    driver: local
+
+networks:
+  arena_network:
+    driver: bridge

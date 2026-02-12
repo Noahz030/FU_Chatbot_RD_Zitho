@@ -67,10 +67,14 @@ secring.*
 .env.production
 .env.local
 .env.*.local
+.env.production.demo
 
 voting_ui.log
 voting_ui.pid
 
 # VM reference (local/private)
 docs/VM-REQUIREMENTS.md
+
+# Archive docs (local/private)
+docs/archive/
 
