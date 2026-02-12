@@ -25,6 +25,7 @@ services:
       - "9001:80"
     networks:
       - arena_network
+      - arena_demo_network
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:80/health"]
@@ -55,6 +56,7 @@ services:
       - "9002:80"
     networks:
       - arena_network
+      - arena_demo_network
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:80/health"]
@@ -90,6 +92,9 @@ networks:
   arena_network:
     external: true
     name: fu_chatbot_rd_zitho_arena_network
+  arena_demo_network:
+    external: true
+    name: docker_arena_network
 
 volumes:
   azure-config-original:
