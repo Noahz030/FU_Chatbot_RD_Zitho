@@ -78,3 +78,9 @@ docs/VM-REQUIREMENTS.md
 # Archive docs (local/private)
 docs/archive/
 
+# Local archive folder (potentially sensitive)
+archive/
+
+# Local-only demo notes
+docs/SELF_SIGNED_TLS_DEMO.md
+
