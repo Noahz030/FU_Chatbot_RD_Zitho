@@ -28,6 +28,10 @@ FailedTranscripts.xlsx
 
 ## Arena runtime data (do not commit)
 src/openwebui/data/*.jsonl
+
+## Arena Admin tools (contain API keys)
+arena_live.py
+/tmp/arena_*.html
 src/openwebui/data/*.backup*
 src/openwebui/arena_comparisons.json
 data/*.jsonl
