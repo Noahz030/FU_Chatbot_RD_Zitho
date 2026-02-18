@@ -32,6 +32,7 @@ src/openwebui/data/*.jsonl
 ## Arena Admin tools (contain API keys)
 arena_live.py
 /tmp/arena_*.html
+docs/ARENA_ADMIN_VIEWER.md
 src/openwebui/data/*.backup*
 src/openwebui/arena_comparisons.json
 data/*.jsonl
