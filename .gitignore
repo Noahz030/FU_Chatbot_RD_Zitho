@@ -89,3 +89,8 @@ archive/
 # Local-only demo notes
 docs/SELF_SIGNED_TLS_DEMO.md
 
+## Arena Admin tools (contain API keys)
+arena_live.py
+/tmp/arena_*.html
+docs/ARENA_ADMIN_VIEWER.md
+
