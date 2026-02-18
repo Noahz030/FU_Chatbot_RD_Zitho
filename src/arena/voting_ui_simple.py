@@ -955,7 +955,8 @@ def index():
 
 
 @app.get("/user-votes", response_class=HTMLResponse, dependencies=[Depends(verify_arena_key)])
-def user_votes():\n    \"\"\"User-Votes mit Session-IDs\"\"\"
+def user_votes():
+    """User-Votes mit Session-IDs"""
     # API URL: Leave empty for intelligent JS detection
     # Works over HTTPS (nginx) with relative URLs
     # Also works over HTTP direct with fallback logic
