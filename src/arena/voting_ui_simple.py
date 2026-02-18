@@ -3,12 +3,36 @@ Vereinfachtes Arena Voting UI - direkt und einfach
 """
 
 import os
-from fastapi import FastAPI
+import secrets
+from typing import Optional
+from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from fastapi.security import APIKeyHeader
 import requests
 
 app = FastAPI()
+
+# API Key Authentication für Arena-Endpunkte
+api_key_header = APIKeyHeader(name="X-Arena-Key", auto_error=False)
+
+async def verify_arena_key(api_key: Optional[str] = Depends(api_key_header)):
+    """Verifiziere API-Key für geschützte Endpunkte (nur in Production)"""
+    # In Production Mode: API-Key erforderlich
+    if os.getenv("ENVIRONMENT", "LOCAL") == "PRODUCTION":
+        arena_api_key = os.getenv("ARENA_API_KEY")
+        if not arena_api_key:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Arena API key not configured on server",
+            )
+        if not api_key or api_key != arena_api_key:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or missing Arena API key",
+                headers={"WWW-Authenticate": "ApiKey"},
+            )
+    return True
 
 # CORS mit konfigurierbaren Origins
 allowed_origins = os.getenv("CORS_ORIGINS", "*").split(",")
@@ -930,9 +954,8 @@ def index():
     return html.replace("__API_OVERRIDE__", api_override)
 
 
-@app.get("/user-votes", response_class=HTMLResponse)
-def user_votes():
-    """User-Votes mit Session-IDs"""
+@app.get("/user-votes", response_class=HTMLResponse, dependencies=[Depends(verify_arena_key)])
+def user_votes():\n    \"\"\"User-Votes mit Session-IDs\"\"\"
     # API URL: Leave empty for intelligent JS detection
     # Works over HTTPS (nginx) with relative URLs
     # Also works over HTTP direct with fallback logic
@@ -1085,7 +1108,7 @@ def user_votes():
     return html.replace("__API_OVERRIDE__", api_override)
 
 
-@app.get("/results", response_class=HTMLResponse)
+@app.get("/results", response_class=HTMLResponse, dependencies=[Depends(verify_arena_key)])
 def results():
     """Neutrale, read-only Ergebnisliste als Tabelle"""
     # API URL: Leave empty for intelligent JS detection

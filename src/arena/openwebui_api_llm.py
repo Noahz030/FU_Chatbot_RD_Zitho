@@ -1071,7 +1071,7 @@ def get_voted(session_id: str = Query(...)):
     return {"comparison_ids": voted}
 
 
-@app.get("/arena/comparisons")
+@app.get("/arena/comparisons", dependencies=[Depends(verify_arena_key)])
 def get_all_comparisons(subset: Optional[int] = None):
     """Liefert alle Comparisons, optional gefiltert nach Subset"""
     if subset is not None:
@@ -1085,7 +1085,7 @@ def get_all_comparisons(subset: Optional[int] = None):
     }
 
 
-@app.get("/arena/statistics")
+@app.get("/arena/statistics", dependencies=[Depends(verify_arena_key)])
 def get_statistics():
     """Aggregierte Statistiken auf Basis individueller Nutzer-Votes"""
     data_dir = get_data_dir()
@@ -1128,7 +1128,7 @@ def get_statistics():
     }
 
 
-@app.get("/arena/comparison/{comparison_id}")
+@app.get("/arena/comparison/{comparison_id}", dependencies=[Depends(verify_arena_key)])
 def get_comparison(comparison_id: str):
     """Liefert eine einzelne Comparison"""
     c = default_storage.get_comparison_by_id(comparison_id)
@@ -1143,7 +1143,7 @@ def create_session():
     return {"session_id": str(uuid.uuid4())}
 
 
-@app.get("/arena/user-votes")
+@app.get("/arena/user-votes", dependencies=[Depends(verify_arena_key)])
 def get_user_votes(session_id: Optional[str] = None):
     """Liefert alle User-Votes, optional gefiltert nach session_id"""
     data_dir = get_data_dir()
