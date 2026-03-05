@@ -157,15 +157,15 @@ def index():
     <h1>KI-Campus | Chatbot-Arena</h1>
 
     <div class="notice">
-        Die Chatbot-Arena ermöglicht den Vergleich von KI‑Antworten zu identischen Fragen.
-        Deine Bewertungen helfen, die Qualität der Modelle zu verbessern.
-        Um alle Quellenverweise in den Antworten der Chatbots vollumfänglich sehen zu können,
-        musst du in Moodle eingeloggt sein.
-        Mehr Informationen zur Verwendung der Daten und zum Datenschutz findest du im
+        In der Chatbot-Arena kannst du zwei Chatbot-Varianten testen und bewerten. Du erhältst zu vorgegebenen Fragen unterschiedliche KI-Antworten und entscheidest, welche Antwort dich jeweils mehr überzeugt. Deine Bewertungen helfen uns, den KI-Campus-Chatbot zu verbessern.
+        <br><br>
+        Hinweis: Um alle Quellenverweise in den Antworten der Chatbots sehen zu können, musst du auf dem KI-Campus eingeloggt sein.
+        <br><br>
+        Weitere Informationen:
         <a href="https://ki-campus.org/impressum" target="_blank" rel="noopener noreferrer">Impressum</a>
-        und der
+        &amp;
         <a href="https://ki-campus.org/datenschutz" target="_blank" rel="noopener noreferrer">Datenschutzerklärung</a>
-        des KI-Campus.
+        des KI-Campus
     </div>
     
     <div id="container">
