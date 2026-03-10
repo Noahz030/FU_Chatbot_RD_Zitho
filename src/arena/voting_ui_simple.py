@@ -197,10 +197,10 @@ def index():
         let questionCursor = 0;
         let currentQuestionText = '';
 
-        const MAX_PREFETCH = 20;  // Large buffer for uninterrupted voting experience
-        const REFILL_THRESHOLD = 12;  // Refill at 60% capacity (aggressive refill)
-        const PREFETCH_CONCURRENCY = 6;  // More parallelism for faster queue refill
-        const PREFETCH_DELAY_MS = 100;  // Small spacing between batch starts
+        const MAX_PREFETCH = 3;  // Small buffer to avoid rate-limit collisions and RAM pressure
+        const REFILL_THRESHOLD = 1;  // Refill when only 1 comparison left in queue
+        const PREFETCH_CONCURRENCY = 1;  // Sequential prefetch – prevents burst load on chatbot containers
+        const PREFETCH_DELAY_MS = 200;  // Small spacing between fetches
 
         function hashStringToSeed(str) {
             let h = 1779033703 ^ str.length;

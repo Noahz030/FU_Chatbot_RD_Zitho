@@ -260,9 +260,9 @@ def rotate_csrf_token(session_id: str) -> str:
 _rate_limit_cache: dict[tuple[str, str], list[float]] = {}
 # Format: {client_ip: [request_timestamps]}
 _rate_limit_ip_cache: dict[str, list[float]] = {}
-# Allow short bursts: 10 req/min per session+IP; cap per IP to prevent multi-session abuse
-RATE_LIMIT_SESSION_MAX_REQUESTS = 10
-RATE_LIMIT_IP_MAX_REQUESTS = 20
+# Allow short bursts: 15 req/min per session; cap per IP to allow ~3 concurrent users from same network
+RATE_LIMIT_SESSION_MAX_REQUESTS = 15
+RATE_LIMIT_IP_MAX_REQUESTS = 40
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_CLEANUP_THRESHOLD = 10000  # Cleanup cache if size exceeds this
 
