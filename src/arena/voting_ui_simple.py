@@ -711,10 +711,15 @@ def index():
                 fillPrefetchQueue();
             } catch (e) {
                 console.error('generateOnDemandComparison error:', e);
-                container.innerHTML = 
-                    '<div class="error">❌ Fehler beim Generieren<br>' + 
-                    'Error: ' + e.message + '<br>' +
-                    '<small>Details im Browser-Konsole (F12)</small></div>';
+                const isTimeout = e.message.includes('504') || e.message.includes('502') || e.message.includes('503') || e.message.includes('Failed to fetch');
+                const errorMsg = isTimeout
+                    ? '⏳ Die KI-Antwort hat zu lange gedauert.<br><small>Der Server ist gerade ausgelastet. Bitte versuche es erneut.</small>'
+                    : '❌ Fehler beim Generieren<br><small>' + e.message + '</small>';
+                container.innerHTML =
+                    '<div class="error" style="text-align:center;padding:30px;">' +
+                    errorMsg +
+                    '<br><br><button onclick="generateOnDemandComparison()" style="padding:10px 24px;font-size:15px;cursor:pointer;border-radius:6px;border:none;background:#2563eb;color:white;">🔄 Erneut versuchen</button>' +
+                    '</div>';
                 console.error('Generate error:', e);
             }
         }
