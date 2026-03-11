@@ -1,0 +1,22 @@
+{
+  "run_id": "20260311T170246Z",
+  "timestamp": "2026-03-11T17:02:46.206246+00:00",
+  "label": "human-conservative",
+  "config": "conc=4,assistant=45,proxy=42,queue=45,sim=conservative_prefetch",
+  "url": "https://chatbot-arena.ki-campus.org/arena/generate",
+  "question": "Ich möchte Prompting lernen",
+  "timeout": 95,
+  "scenarios": [
+    {
+      "scenario": "H1_human_prefetch_u5_r4_s2_t5",
+      "count": 20,
+      "codes": {
+        "503": 20
+      },
+      "latency_avg_s": 53.94405047893524,
+      "latency_min_s": 45.140339374542236,
+      "latency_max_s": 84.10884404182434,
+      "demo_fallback_files": 0
+    }
+  ]
+}

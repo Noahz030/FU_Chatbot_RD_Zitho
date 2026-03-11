@@ -15,3 +15,5 @@ run_id,timestamp,label,scenario,count,code_200,code_429,code_502,code_503,code_5
 20260311T163442Z,2026-03-11T16:34:42.419012+00:00,c4_a45_p42_bothprofiles,S7_burst15,15,0,0,0,13,2,0,57.140,45.098,90.215,0,"conc=4,assistant=45,proxy=42,queue=45,prefetch=MAX2_DELAY1500"
 20260311T163442Z,2026-03-11T16:34:42.419012+00:00,c4_a45_p42_bothprofiles,H1_human_prefetch_u5_r4,20,0,0,0,20,0,0,53.945,45.141,84.070,0,"conc=4,assistant=45,proxy=42,queue=45,prefetch=MAX2_DELAY1500"
 20260311T163442Z,2026-03-11T16:34:42.419012+00:00,c4_a45_p42_bothprofiles,H2_human_prefetch_u8_r4,32,0,0,0,32,0,0,83.918,45.121,90.111,0,"conc=4,assistant=45,proxy=42,queue=45,prefetch=MAX2_DELAY1500"
+20260311T165636Z,2026-03-11T16:56:36.941547+00:00,human-aggressive,H1_human_prefetch_u8_r4_s1_t1,32,0,0,0,32,0,0,83.016,44.032,90.140,0,"conc=4,assistant=45,proxy=42,queue=45,sim=aggressive_prefetch"
+20260311T170246Z,2026-03-11T17:02:46.206246+00:00,human-conservative,H1_human_prefetch_u5_r4_s2_t5,20,0,0,0,20,0,0,53.944,45.140,84.109,0,"conc=4,assistant=45,proxy=42,queue=45,sim=conservative_prefetch"
