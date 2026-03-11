@@ -82,38 +82,38 @@ class ModelRegistry:
     
     def load_default_models(self) -> None:
         """Load default models when config file is not available"""
-        default_config = """
+                default_config = """
 models:
-  kicampus-v1:
-    name: "KI-Campus (Original)"
-    description: "Original chatbot version via HTTPProxyAssistant"
-    enabled: true
-    params:
-      api_base_url: "http://chatbot-original:80"
-      api_key: "arena-test-key"
+    kicampus-v1:
+        name: "KI-Campus (Original)"
+        description: "Original chatbot version via HTTPProxyAssistant"
+        enabled: true
+        params:
+            api_base_url: "http://chatbot-original:80"
+            api_key: "arena-test-key"
             timeout: 45
-    source: "src.llm.http_proxy_assistant:HTTPProxyAssistant"
-    release_date: "2025-01-01"
-    tags:
-      - "original"
-      - "baseline"
-      - "stable"
+        source: "src.llm.http_proxy_assistant:HTTPProxyAssistant"
+        release_date: "2025-01-01"
+        tags:
+            - "original"
+            - "baseline"
+            - "stable"
 
-  kicampus-v1-improved:
-    name: "KI-Campus (Improved)"
-    description: "Improved chatbot version via HTTPProxyAssistant"
-    enabled: true
-    params:
-      api_base_url: "http://chatbot-improved:80"
-      api_key: "arena-test-key"
-        timeout: 45
-      use_thread_api: true
-    source: "src.llm.http_proxy_assistant:HTTPProxyAssistant"
-    release_date: "2025-06-01"
-    tags:
-      - "improved"
-      - "extended-context"
-      - "stable"
+    kicampus-v1-improved:
+        name: "KI-Campus (Improved)"
+        description: "Improved chatbot version via HTTPProxyAssistant"
+        enabled: true
+        params:
+            api_base_url: "http://chatbot-improved:80"
+            api_key: "arena-test-key"
+            timeout: 45
+            use_thread_api: true
+        source: "src.llm.http_proxy_assistant:HTTPProxyAssistant"
+        release_date: "2025-06-01"
+        tags:
+            - "improved"
+            - "extended-context"
+            - "stable"
 """
         config_data = yaml.safe_load(default_config)
         # Parse model configurations (same as load_config)
