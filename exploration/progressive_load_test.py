@@ -157,6 +157,10 @@ def parse_args():
         default="both",
         help="Which test profile to run",
     )
+    parser.add_argument("--human-users", type=int, default=5, help="Users for human-like profile")
+    parser.add_argument("--human-rounds", type=int, default=4, help="Rounds per user in human-like profile")
+    parser.add_argument("--human-stagger", type=int, default=2, help="Start stagger in seconds between users")
+    parser.add_argument("--human-think", type=int, default=3, help="Think time in seconds before using prefetched result")
     return parser.parse_args()
 
 
@@ -228,18 +232,11 @@ if __name__ == "__main__":
         scenarios.extend(
             [
                 run_human_like_prefetch(
-                    users=5,
-                    rounds=4,
-                    stagger_seconds=2,
-                    think_seconds=3,
-                    name="H1_human_prefetch_u5_r4",
-                ),
-                run_human_like_prefetch(
-                    users=8,
-                    rounds=4,
-                    stagger_seconds=1,
-                    think_seconds=2,
-                    name="H2_human_prefetch_u8_r4",
+                    users=args.human_users,
+                    rounds=args.human_rounds,
+                    stagger_seconds=args.human_stagger,
+                    think_seconds=args.human_think,
+                    name=f"H1_human_prefetch_u{args.human_users}_r{args.human_rounds}_s{args.human_stagger}_t{args.human_think}",
                 ),
             ]
         )

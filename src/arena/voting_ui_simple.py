@@ -197,10 +197,10 @@ def index():
         let questionCursor = 0;
         let currentQuestionText = '';
 
-        const MAX_PREFETCH = 2;  // Reduced to lower peak concurrency on chatbot backends
-        const REFILL_THRESHOLD = 1;  // Refill when only 1 comparison left in queue
+        const MAX_PREFETCH = 1;  // Keep only one prepared comparison to reduce background load
+        const REFILL_THRESHOLD = 0;  // Refill only when queue is empty
         const PREFETCH_CONCURRENCY = 1;  // Sequential prefetch – prevents burst load on chatbot containers
-        const PREFETCH_DELAY_MS = 1500;  // Wider spacing between prefetch fetches to ease backend
+        const PREFETCH_DELAY_MS = 3000;  // Further spacing between prefetch requests to reduce pressure
 
         function hashStringToSeed(str) {
             let h = 1779033703 ^ str.length;
