@@ -6,6 +6,7 @@ Used to integrate external chatbot versions (original vs improved) into Arena.
 """
 
 import logging
+import os
 from typing import Optional
 import requests
 from llama_index.core.llms import ChatMessage, MessageRole
@@ -23,25 +24,32 @@ class HTTPProxyAssistant:
     The external API must implement the /api/chat endpoint compatible with KICampusAssistant.
     """
     
-    def __init__(self, api_base_url: str, api_key: str = "arena-test-key", timeout: int = 120, use_thread_api: bool = False, **kwargs):
+    def __init__(self, api_base_url: str, api_key: str = "arena-test-key", timeout: int = 45, use_thread_api: bool = False, **kwargs):
         """
         Initialize HTTP proxy assistant
         
         Args:
             api_base_url: Base URL of the external chatbot API (e.g., http://localhost:9001)
             api_key: API key for authentication
-            timeout: Request timeout in seconds (default 120s to handle Azure rate limits)
+            timeout: Request timeout in seconds (default 45s)
             use_thread_api: If True, uses thread-based API (user_query + thread_id) instead of messages list
             **kwargs: Additional parameters (e.g., context_window) ignored by proxy
         """
         self.api_base_url = api_base_url.rstrip("/")
         self.api_key = api_key
-        self.timeout = timeout
+        max_timeout = int(os.getenv("ARENA_PROXY_MAX_TIMEOUT_SECONDS", "45"))
+        self.timeout = min(timeout, max_timeout)
         self.use_thread_api = use_thread_api
         self.session = requests.Session()
         self.session.headers.update({"Api-Key": api_key})
         
-        logger.info(f"HTTPProxyAssistant initialized for {api_base_url} (thread_api={use_thread_api}, timeout={timeout}s)")
+        logger.info(
+            "HTTPProxyAssistant initialized for %s (thread_api=%s, timeout=%ss, configured=%ss)",
+            api_base_url,
+            use_thread_api,
+            self.timeout,
+            timeout,
+        )
     
     def _convert_chat_history(self, chat_history: list[ChatMessage]) -> list[dict]:
         """Convert LlamaIndex ChatMessage to API format"""

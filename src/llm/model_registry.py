@@ -91,7 +91,7 @@ models:
     params:
       api_base_url: "http://chatbot-original:80"
       api_key: "arena-test-key"
-      timeout: 120
+            timeout: 45
     source: "src.llm.http_proxy_assistant:HTTPProxyAssistant"
     release_date: "2025-01-01"
     tags:
@@ -106,7 +106,7 @@ models:
     params:
       api_base_url: "http://chatbot-improved:80"
       api_key: "arena-test-key"
-      timeout: 120
+            timeout: 45
       use_thread_api: true
     source: "src.llm.http_proxy_assistant:HTTPProxyAssistant"
     release_date: "2025-06-01"

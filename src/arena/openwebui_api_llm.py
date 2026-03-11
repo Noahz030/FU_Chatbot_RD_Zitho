@@ -280,6 +280,13 @@ SESSION_CLEANUP_THRESHOLD = int(os.getenv("SESSION_CLEANUP_THRESHOLD", "10000"))
 # Assistants are loaded on-demand to avoid failures during startup
 _assistants_cache: dict[str, Any] = {}
 
+# Generate endpoint stability guards (load shedding + bounded latency)
+MAX_GENERATE_CONCURRENCY = int(os.getenv("ARENA_MAX_GENERATE_CONCURRENCY", "4"))
+GENERATE_ASSISTANT_TIMEOUT_SECONDS = int(os.getenv("ARENA_GENERATE_ASSISTANT_TIMEOUT_SECONDS", "45"))
+_generate_semaphore = asyncio.Semaphore(MAX_GENERATE_CONCURRENCY)
+_inflight_generate_sessions: set[str] = set()
+_inflight_generate_lock = asyncio.Lock()
+
 # Validation bounds
 MAX_QUESTION_LEN = 500
 MAX_COMMENT_LEN = 500
@@ -801,6 +808,62 @@ def call_assistant(assistant: Any, question: str) -> str:
         return f"[Error: {type(e).__name__}: {str(e)}]"
 
 
+async def _run_assistant_with_timeout(assistant: Any, question: str, label: str) -> Optional[str]:
+    """Run assistant call with bounded runtime and normalized error handling."""
+    loop = asyncio.get_running_loop()
+    try:
+        answer = await asyncio.wait_for(
+            loop.run_in_executor(None, lambda: call_assistant(assistant, question)),
+            timeout=GENERATE_ASSISTANT_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "Assistant %s exceeded timeout (%ss)",
+            label,
+            GENERATE_ASSISTANT_TIMEOUT_SECONDS,
+        )
+        return None
+    except Exception as e:
+        logger.warning("Assistant %s failed: %s: %s", label, type(e).__name__, e)
+        return None
+
+    if not answer:
+        logger.warning("Assistant %s returned empty response", label)
+        return None
+
+    if str(answer).startswith("[ERROR:") or str(answer).startswith("[Error:"):
+        logger.warning("Assistant %s returned proxy error payload: %s", label, str(answer)[:160])
+        return None
+
+    return answer
+
+
+async def _acquire_generate_slot_or_reject(session_id: str) -> None:
+    """Reject early when server is saturated or same session already in-flight."""
+    try:
+        await asyncio.wait_for(_generate_semaphore.acquire(), timeout=0.05)
+    except asyncio.TimeoutError as e:
+        raise HTTPException(
+            status_code=503,
+            detail="Server currently busy. Please retry in a few seconds.",
+        ) from e
+
+    async with _inflight_generate_lock:
+        if session_id in _inflight_generate_sessions:
+            _generate_semaphore.release()
+            raise HTTPException(
+                status_code=429,
+                detail="Generation already in progress for this session. Please wait.",
+            )
+        _inflight_generate_sessions.add(session_id)
+
+
+async def _release_generate_slot(session_id: str) -> None:
+    async with _inflight_generate_lock:
+        _inflight_generate_sessions.discard(session_id)
+    _generate_semaphore.release()
+
+
 @app.post("/arena/generate")
 async def generate_comparison(request: GenerateRequest, http_request: Request):
     """Generiert on-demand frische Antworten zwischen zwei Assistenten-Versionen
@@ -846,7 +909,11 @@ async def generate_comparison(request: GenerateRequest, http_request: Request):
         )
         raise
     
+    slot_acquired = False
     try:
+        await _acquire_generate_slot_or_reject(request.session_id)
+        slot_acquired = True
+
         # Get both assistant versions
         assistant_a = await get_assistant("kicampus-v1")
         assistant_b = await get_assistant("kicampus-v1-improved")
@@ -860,33 +927,12 @@ async def generate_comparison(request: GenerateRequest, http_request: Request):
         
         logger.info("✅ Both assistants initialized")
         
-        # Versuche echte Antworten zu generieren mit den Assistenten-Versionen
-        answer_a = None
-        answer_b = None
-        
-        try:
-            logger.info("Attempting real LLM generation from both assistants...")
-            from src.llm.LLMs import Models
-            
-            # Use GPT-4 as default model for both assistants
-            llm_model = Models.GPT4
-            
-            # Generate from both assistants in parallel
-            loop = asyncio.get_event_loop()
-            answer_a_task = loop.run_in_executor(None, lambda: call_assistant(assistant_a, request.question))
-            answer_b_task = loop.run_in_executor(None, lambda: call_assistant(assistant_b, request.question))
-            
-            answer_a = await answer_a_task
-            answer_b = await answer_b_task
-            
-            logger.info(f"✅ Generated answer A from kicampus-v1 ({len(answer_a)} chars)")
-            logger.info(f"✅ Generated answer B from kicampus-v1-improved ({len(answer_b)} chars)")
-        
-        except Exception as gen_error:
-            logger.warning(f"⚠️  Real LLM generation failed: {type(gen_error).__name__}: {gen_error}")
-            logger.warning(f"Falling back to placeholder answers")
-            answer_a = None
-            answer_b = None
+        # Generate from both assistants in parallel but with strict per-assistant timeout.
+        logger.info("Attempting bounded generation from both assistants...")
+        answer_a, answer_b = await asyncio.gather(
+            _run_assistant_with_timeout(assistant_a, request.question, "kicampus-v1"),
+            _run_assistant_with_timeout(assistant_b, request.question, "kicampus-v1-improved"),
+        )
         
         # Fallback answers if generation failed
         if not answer_a:
@@ -922,6 +968,16 @@ async def generate_comparison(request: GenerateRequest, http_request: Request):
             request=http_request,
             detail=f"Question: {request.question[:100]}"
         )
+
+        if "Demo-Modus" in answer_a or "Demo-Modus" in answer_b:
+            write_audit_event(
+                "comparison_degraded",
+                session_id=request.session_id,
+                comparison_id=comparison.id,
+                subset_id=request.subset_id,
+                request=http_request,
+                detail="One or more assistant answers fell back due to timeout/error",
+            )
         
         # Return shuffled view for blind testing
         result = comparison.get_shuffled_view()
@@ -936,6 +992,9 @@ async def generate_comparison(request: GenerateRequest, http_request: Request):
             status_code=500,
             detail=f"Failed to generate comparison: {str(e)}"
         )
+    finally:
+        if slot_acquired:
+            await _release_generate_slot(request.session_id)
 
 
 @app.get("/arena/csrf-token")
