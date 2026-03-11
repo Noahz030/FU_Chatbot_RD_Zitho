@@ -935,12 +935,20 @@ async def generate_comparison(request: GenerateRequest, http_request: Request):
             _run_assistant_with_timeout(assistant_b, request.question, "kicampus-v1-improved"),
         )
         
-        # Fallback answers if generation failed
-        if not answer_a:
-            answer_a = f"Dies ist eine Beispielantwort von kicampus-v1.\n\nDie Arena läuft aktuell im Demo-Modus. In der Produktionsumgebung würde hier eine echte Antwort zum Thema '{request.question}' stehen.\n\nDie Qualität der Antworten wird dann durch Vergleich mit anderen Chatbot-Versionen bewertet."
-        
-        if not answer_b:
-            answer_b = f"Dies ist eine Beispielantwort von kicampus-v1-improved.\n\nDie Arena läuft aktuell im Demo-Modus. In der Produktionsumgebung würde hier eine echte Antwort zum Thema '{request.question}' stehen.\n\nDie Qualität der Antworten wird dann durch Vergleich mit anderen Chatbot-Versionen bewertet."
+        # Never serve demo placeholders in production traffic.
+        # If one assistant times out/fails, force a retry path via 503.
+        if not answer_a or not answer_b:
+            write_audit_event(
+                "comparison_generation_failed",
+                session_id=request.session_id,
+                subset_id=request.subset_id,
+                request=http_request,
+                detail="One or more assistant answers missing due to timeout/error",
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="Generation currently overloaded. Please retry in a few seconds.",
+            )
         
         # Erstelle Comparison zwischen den beiden Assistenten-Versionen
         comparison = ArenaComparison(
@@ -970,16 +978,6 @@ async def generate_comparison(request: GenerateRequest, http_request: Request):
             detail=f"Question: {request.question[:100]}"
         )
 
-        if "Demo-Modus" in answer_a or "Demo-Modus" in answer_b:
-            write_audit_event(
-                "comparison_degraded",
-                session_id=request.session_id,
-                comparison_id=comparison.id,
-                subset_id=request.subset_id,
-                request=http_request,
-                detail="One or more assistant answers fell back due to timeout/error",
-            )
-        
         # Return shuffled view for blind testing
         result = comparison.get_shuffled_view()
         logger.info(f"✅ Returning comparison (shuffled: {result.get('is_shuffled')})")
