@@ -18,11 +18,11 @@ services:
       ARENA_DATA_DIR: /app/src/arena/data
       # Load-shedding and bounded-latency tuning for /arena/generate
       ARENA_MAX_GENERATE_CONCURRENCY: "4"
-      ARENA_GENERATE_ASSISTANT_TIMEOUT_SECONDS: "40"
+      ARENA_GENERATE_ASSISTANT_TIMEOUT_SECONDS: "45"
       ARENA_GENERATE_QUEUE_WAIT_SECONDS: "45"
       # Proxy timeout must be BELOW assistant timeout so HTTP threads finish before
       # asyncio.wait_for cancels them; prevents orphaned executor threads holding backend load
-      ARENA_PROXY_MAX_TIMEOUT_SECONDS: "37"
+      ARENA_PROXY_MAX_TIMEOUT_SECONDS: "42"
       # CORS Origins from environment
       CORS_ORIGINS: "${CORS_ORIGINS:-*}"
     volumes:
