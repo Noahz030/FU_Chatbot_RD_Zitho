@@ -197,10 +197,10 @@ def index():
         let questionCursor = 0;
         let currentQuestionText = '';
 
-        const MAX_PREFETCH = 3;  // Small buffer to avoid rate-limit collisions and RAM pressure
+        const MAX_PREFETCH = 2;  // Reduced to lower peak concurrency on chatbot backends
         const REFILL_THRESHOLD = 1;  // Refill when only 1 comparison left in queue
         const PREFETCH_CONCURRENCY = 1;  // Sequential prefetch – prevents burst load on chatbot containers
-        const PREFETCH_DELAY_MS = 200;  // Small spacing between fetches
+        const PREFETCH_DELAY_MS = 1500;  // Wider spacing between prefetch fetches to ease backend
 
         function hashStringToSeed(str) {
             let h = 1779033703 ^ str.length;
@@ -711,15 +711,28 @@ def index():
                 fillPrefetchQueue();
             } catch (e) {
                 console.error('generateOnDemandComparison error:', e);
-                const isTimeout = e.message.includes('504') || e.message.includes('502') || e.message.includes('503') || e.message.includes('Failed to fetch');
-                const errorMsg = isTimeout
-                    ? '⏳ Die KI-Antwort hat zu lange gedauert.<br><small>Der Server ist gerade ausgelastet. Bitte versuche es erneut.</small>'
+                const isOverload = e.message.includes('503') || e.message.includes('504') || e.message.includes('502') || e.message.includes('Failed to fetch');
+                const retryDelaySec = isOverload ? 8 : null;
+                const errorMsg = isOverload
+                    ? '⏳ Der Server ist gerade ausgelastet.<br><small>Automatischer Neuversuch in <span id="retry-countdown">' + retryDelaySec + '</span>s …</small>'
                     : '❌ Fehler beim Generieren<br><small>' + e.message + '</small>';
                 container.innerHTML =
                     '<div class="error" style="text-align:center;padding:30px;">' +
                     errorMsg +
-                    '<br><br><button onclick="generateOnDemandComparison()" style="padding:10px 24px;font-size:15px;cursor:pointer;border-radius:6px;border:none;background:#2563eb;color:white;">🔄 Erneut versuchen</button>' +
+                    '<br><br><button id="retry-btn" onclick="generateOnDemandComparison()" style="padding:10px 24px;font-size:15px;cursor:pointer;border-radius:6px;border:none;background:#2563eb;color:white;">🔄 Jetzt erneut versuchen</button>' +
                     '</div>';
+                if (isOverload && retryDelaySec) {
+                    let remaining = retryDelaySec;
+                    const tick = setInterval(() => {
+                        remaining--;
+                        const el = document.getElementById('retry-countdown');
+                        if (el) el.textContent = remaining;
+                        if (remaining <= 0) {
+                            clearInterval(tick);
+                            generateOnDemandComparison();
+                        }
+                    }, 1000);
+                }
                 console.error('Generate error:', e);
             }
         }

@@ -844,6 +844,12 @@ async def _acquire_generate_slot_or_reject(session_id: str) -> None:
     try:
         await asyncio.wait_for(_generate_semaphore.acquire(), timeout=GENERATE_QUEUE_WAIT_SECONDS)
     except asyncio.TimeoutError as e:
+        logger.warning(
+            "Queue wait timeout after %ss — all %d slots occupied, rejecting session %s",
+            GENERATE_QUEUE_WAIT_SECONDS,
+            MAX_GENERATE_CONCURRENCY,
+            session_id,
+        )
         raise HTTPException(
             status_code=503,
             detail="Server currently busy. Please retry shortly.",
@@ -938,12 +944,18 @@ async def generate_comparison(request: GenerateRequest, http_request: Request):
         # Never serve demo placeholders in production traffic.
         # If one assistant times out/fails, force a retry path via 503.
         if not answer_a or not answer_b:
+            missing = [label for label, ans in [("kicampus-v1", answer_a), ("kicampus-v1-improved", answer_b)] if not ans]
+            logger.warning(
+                "Assistant timeout/error — missing answers from: %s (session=%s)",
+                ", ".join(missing),
+                request.session_id,
+            )
             write_audit_event(
                 "comparison_generation_failed",
                 session_id=request.session_id,
                 subset_id=request.subset_id,
                 request=http_request,
-                detail="One or more assistant answers missing due to timeout/error",
+                detail=f"Missing answers from: {', '.join(missing)}",
             )
             raise HTTPException(
                 status_code=503,
