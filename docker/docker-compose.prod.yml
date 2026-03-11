@@ -17,7 +17,7 @@ services:
       STORAGE_PATH: /app/src/arena/data/arena_votes.jsonl
       ARENA_DATA_DIR: /app/src/arena/data
       # Load-shedding and bounded-latency tuning for /arena/generate
-      ARENA_MAX_GENERATE_CONCURRENCY: "6"
+      ARENA_MAX_GENERATE_CONCURRENCY: "4"
       ARENA_GENERATE_ASSISTANT_TIMEOUT_SECONDS: "40"
       ARENA_GENERATE_QUEUE_WAIT_SECONDS: "45"
       # Proxy timeout must be BELOW assistant timeout so HTTP threads finish before
