@@ -82,7 +82,7 @@ class ModelRegistry:
     
     def load_default_models(self) -> None:
         """Load default models when config file is not available"""
-                default_config = """
+        default_config = """
 models:
     kicampus-v1:
         name: "KI-Campus (Original)"
