@@ -283,6 +283,7 @@ _assistants_cache: dict[str, Any] = {}
 # Generate endpoint stability guards (load shedding + bounded latency)
 MAX_GENERATE_CONCURRENCY = int(os.getenv("ARENA_MAX_GENERATE_CONCURRENCY", "4"))
 GENERATE_ASSISTANT_TIMEOUT_SECONDS = int(os.getenv("ARENA_GENERATE_ASSISTANT_TIMEOUT_SECONDS", "45"))
+GENERATE_QUEUE_WAIT_SECONDS = float(os.getenv("ARENA_GENERATE_QUEUE_WAIT_SECONDS", "30"))
 _generate_semaphore = asyncio.Semaphore(MAX_GENERATE_CONCURRENCY)
 _inflight_generate_sessions: set[str] = set()
 _inflight_generate_lock = asyncio.Lock()
@@ -841,11 +842,11 @@ async def _run_assistant_with_timeout(assistant: Any, question: str, label: str)
 async def _acquire_generate_slot_or_reject(session_id: str) -> None:
     """Reject early when server is saturated or same session already in-flight."""
     try:
-        await asyncio.wait_for(_generate_semaphore.acquire(), timeout=0.05)
+        await asyncio.wait_for(_generate_semaphore.acquire(), timeout=GENERATE_QUEUE_WAIT_SECONDS)
     except asyncio.TimeoutError as e:
         raise HTTPException(
             status_code=503,
-            detail="Server currently busy. Please retry in a few seconds.",
+            detail="Server currently busy. Please retry shortly.",
         ) from e
 
     async with _inflight_generate_lock:
