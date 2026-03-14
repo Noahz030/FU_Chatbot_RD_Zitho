@@ -23,8 +23,8 @@ services:
       # Proxy timeout must be BELOW assistant timeout so HTTP threads finish before
       # asyncio.wait_for cancels them; prevents orphaned executor threads holding backend load
       ARENA_PROXY_MAX_TIMEOUT_SECONDS: "42"
-      # Chatbot routing: original via Azure, improved remains local on VM for now
-      CHATBOT_ORIGINAL_URL: "${CHATBOT_ORIGINAL_URL:-https://kic-restapi-prod.azurewebsites.net}"
+      # Chatbot routing defaults to local containers; override via env for Azure migration
+      CHATBOT_ORIGINAL_URL: "${CHATBOT_ORIGINAL_URL:-http://chatbot-original:80}"
       CHATBOT_IMPROVED_URL: "${CHATBOT_IMPROVED_URL:-http://chatbot-improved:80}"
       # Prefer providing the concrete keys in .env.production; fallbacks keep backward compatibility
       CHATBOT_ORIGINAL_API_KEY: "${CHATBOT_ORIGINAL_API_KEY:-arena-test-key}"

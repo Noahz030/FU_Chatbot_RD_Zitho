@@ -83,7 +83,7 @@ class ModelRegistry:
     
     def load_default_models(self) -> None:
         """Load default models when config file is not available"""
-        chatbot_original_url = os.getenv("CHATBOT_ORIGINAL_URL", "https://kic-restapi-prod.azurewebsites.net")
+        chatbot_original_url = os.getenv("CHATBOT_ORIGINAL_URL", "http://chatbot-original:80")
         chatbot_improved_url = os.getenv("CHATBOT_IMPROVED_URL", "http://chatbot-improved:80")
         chatbot_original_api_key = os.getenv("CHATBOT_ORIGINAL_API_KEY", os.getenv("CHATBOT_API_KEY", "arena-test-key"))
         chatbot_improved_api_key = os.getenv("CHATBOT_IMPROVED_API_KEY", os.getenv("CHATBOT_API_KEY", "arena-test-key"))
