@@ -5,6 +5,7 @@ Enables plug-and-play version management without code changes
 
 import importlib
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional, Type
@@ -82,15 +83,20 @@ class ModelRegistry:
     
     def load_default_models(self) -> None:
         """Load default models when config file is not available"""
-        default_config = """
+        chatbot_original_url = os.getenv("CHATBOT_ORIGINAL_URL", "https://kic-restapi-prod.azurewebsites.net")
+        chatbot_improved_url = os.getenv("CHATBOT_IMPROVED_URL", "http://chatbot-improved:80")
+        chatbot_original_api_key = os.getenv("CHATBOT_ORIGINAL_API_KEY", os.getenv("CHATBOT_API_KEY", "arena-test-key"))
+        chatbot_improved_api_key = os.getenv("CHATBOT_IMPROVED_API_KEY", os.getenv("CHATBOT_API_KEY", "arena-test-key"))
+
+        default_config = f"""
 models:
     kicampus-v1:
         name: "KI-Campus (Original)"
         description: "Original chatbot version via HTTPProxyAssistant"
         enabled: true
         params:
-            api_base_url: "http://chatbot-original:80"
-            api_key: "arena-test-key"
+            api_base_url: "{chatbot_original_url}"
+            api_key: "{chatbot_original_api_key}"
             timeout: 45
         source: "src.llm.http_proxy_assistant:HTTPProxyAssistant"
         release_date: "2025-01-01"
@@ -104,8 +110,8 @@ models:
         description: "Improved chatbot version via HTTPProxyAssistant"
         enabled: true
         params:
-            api_base_url: "http://chatbot-improved:80"
-            api_key: "arena-test-key"
+            api_base_url: "{chatbot_improved_url}"
+            api_key: "{chatbot_improved_api_key}"
             timeout: 45
             use_thread_api: true
         source: "src.llm.http_proxy_assistant:HTTPProxyAssistant"
