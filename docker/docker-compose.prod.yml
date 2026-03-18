@@ -18,16 +18,12 @@ services:
       ARENA_DATA_DIR: /app/src/arena/data
       # Load-shedding and bounded-latency tuning for /arena/generate
       ARENA_MAX_GENERATE_CONCURRENCY: "4"
-      ARENA_GENERATE_ASSISTANT_TIMEOUT_SECONDS: "45"
-      ARENA_GENERATE_QUEUE_WAIT_SECONDS: "45"
+      ARENA_GENERATE_ASSISTANT_TIMEOUT_SECONDS: "60"
+      ARENA_GENERATE_QUEUE_WAIT_SECONDS: "60"
       # Proxy timeout must be BELOW assistant timeout so HTTP threads finish before
       # asyncio.wait_for cancels them; prevents orphaned executor threads holding backend load
-      ARENA_PROXY_MAX_TIMEOUT_SECONDS: "42"
-      # Chatbot routing: Azure Lab v1 (original), localhost v1-improved
-      CHATBOT_ORIGINAL_URL: "https://kic-restapi-lab.azurewebsites.net"
-      CHATBOT_IMPROVED_URL: "http://chatbot-improved:80"
-      CHATBOT_ORIGINAL_API_KEY: "moodle-cR9l$+*dC(qK(4QnscIafPA7KV5IDX1b"
-      CHATBOT_IMPROVED_API_KEY: "arena-test-key"
+      ARENA_PROXY_MAX_TIMEOUT_SECONDS: "55"
+      # Chatbot routing/keys are provided via env_file (.env.production)
       # CORS Origins from environment
       CORS_ORIGINS: "${CORS_ORIGINS:-*}"
     volumes:

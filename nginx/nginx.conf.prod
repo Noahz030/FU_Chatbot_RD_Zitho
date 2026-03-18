@@ -163,7 +163,7 @@ http {
 
         # Arena API endpoints
         location /arena/ {
-            limit_req zone=api_zone burst=20 nodelay;
+            limit_req zone=general_zone burst=10 nodelay;
             
             proxy_pass http://arena_api/arena/;
             proxy_http_version 1.1;

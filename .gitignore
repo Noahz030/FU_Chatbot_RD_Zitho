@@ -89,6 +89,11 @@ archive/
 # Local-only demo notes
 docs/SELF_SIGNED_TLS_DEMO.md
 
+# Loadtest artifacts (local only)
+exploration/loadtest_results/
+exploration/*.log
+exploration/matrix_tuning_protocol.py
+
 ## Arena Admin tools (contain API keys)
 arena_live.py
 /tmp/arena_*.html

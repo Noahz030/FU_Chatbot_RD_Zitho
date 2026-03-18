@@ -201,6 +201,43 @@ def index():
         const REFILL_THRESHOLD = 0;  // Refill only when queue is empty
         const PREFETCH_CONCURRENCY = 1;  // Sequential prefetch – prevents burst load on chatbot containers
         const PREFETCH_DELAY_MS = 3000;  // Further spacing between prefetch requests to reduce pressure
+        const MAX_INFLIGHT_GENERATE = 1;  // Serialize /arena/generate calls per browser session
+
+        let generateInFlight = 0;
+        const generateWaiters = [];
+
+        async function acquireGenerateSlot() {
+            if (generateInFlight < MAX_INFLIGHT_GENERATE) {
+                generateInFlight++;
+                return;
+            }
+            await new Promise(resolve => generateWaiters.push(resolve));
+            generateInFlight++;
+        }
+
+        function releaseGenerateSlot() {
+            generateInFlight = Math.max(0, generateInFlight - 1);
+            if (generateWaiters.length > 0) {
+                const next = generateWaiters.shift();
+                if (next) next();
+            }
+        }
+
+        async function fetchGenerate(payload) {
+            await acquireGenerateSlot();
+            try {
+                return await fetch(API + '/arena/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+            } finally {
+                releaseGenerateSlot();
+            }
+        }
 
         function hashStringToSeed(str) {
             let h = 1779033703 ^ str.length;
@@ -488,19 +525,12 @@ def index():
                     const question = nextQuestion();
                     if (!question) return; // nothing left
                     const honeypot = document.getElementById('honeypot_website');
-                    const resp = await fetch(API + '/arena/generate', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            question: question,
-                            session_id: sessionId,
-                            subset_id: assignedSubset,
-                            user_id: null,
-                            honeypot: honeypot ? honeypot.value : null  // Send honeypot value
-                        })
+                    const resp = await fetchGenerate({
+                        question: question,
+                        session_id: sessionId,
+                        subset_id: assignedSubset,
+                        user_id: null,
+                        honeypot: honeypot ? honeypot.value : null  // Send honeypot value
                     });
                     if (!resp.ok) throw new Error('Prefetch failed: ' + resp.status);
                     const comparison = await resp.json();
@@ -669,19 +699,12 @@ def index():
                 
                 // Call generate endpoint with subset validation
                 const honeypot = document.getElementById('honeypot_website');
-                const resp = await fetch(API + '/arena/generate', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        question: question,
-                        session_id: sessionId,
-                        subset_id: assignedSubset,
-                        user_id: null,
-                        honeypot: honeypot ? honeypot.value : null  // Send honeypot value
-                    })
+                const resp = await fetchGenerate({
+                    question: question,
+                    session_id: sessionId,
+                    subset_id: assignedSubset,
+                    user_id: null,
+                    honeypot: honeypot ? honeypot.value : null  // Send honeypot value
                 });
                 
                 console.log('Generate response:', resp.status);
