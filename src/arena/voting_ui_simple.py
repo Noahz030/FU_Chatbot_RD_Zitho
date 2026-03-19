@@ -734,17 +734,20 @@ def index():
                 fillPrefetchQueue();
             } catch (e) {
                 console.error('generateOnDemandComparison error:', e);
+                const isSessionBusy = e.message.includes('429') || e.message.includes('Generation already in progress');
                 const isOverload = e.message.includes('503') || e.message.includes('504') || e.message.includes('502') || e.message.includes('Failed to fetch');
-                const retryDelaySec = isOverload ? 8 : null;
-                const errorMsg = isOverload
-                    ? '⏳ Der Server ist gerade ausgelastet.<br><small>Automatischer Neuversuch in <span id="retry-countdown">' + retryDelaySec + '</span>s …</small>'
-                    : '❌ Fehler beim Generieren<br><small>' + e.message + '</small>';
+                const retryDelaySec = isSessionBusy ? 2 : (isOverload ? 8 : null);
+                const errorMsg = isSessionBusy
+                    ? '⏳ Es läuft bereits eine Generierung für diese Session.<br><small>Automatischer Neuversuch in <span id="retry-countdown">' + retryDelaySec + '</span>s …</small>'
+                    : (isOverload
+                        ? '⏳ Der Server ist gerade ausgelastet.<br><small>Automatischer Neuversuch in <span id="retry-countdown">' + retryDelaySec + '</span>s …</small>'
+                        : '❌ Fehler beim Generieren<br><small>' + e.message + '</small>');
                 container.innerHTML =
                     '<div class="error" style="text-align:center;padding:30px;">' +
                     errorMsg +
                     '<br><br><button id="retry-btn" onclick="generateOnDemandComparison()" style="padding:10px 24px;font-size:15px;cursor:pointer;border-radius:6px;border:none;background:#2563eb;color:white;">🔄 Jetzt erneut versuchen</button>' +
                     '</div>';
-                if (isOverload && retryDelaySec) {
+                if (retryDelaySec) {
                     let remaining = retryDelaySec;
                     const tick = setInterval(() => {
                         remaining--;
