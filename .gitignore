@@ -80,6 +80,9 @@ voting_ui.pid
 # VM reference (local/private)
 docs/VM-REQUIREMENTS.md
 
+# Ignore docs folder
+docs/
+
 # Archive docs (local/private)
 docs/archive/
 
